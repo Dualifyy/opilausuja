@@ -163,26 +163,6 @@ Goal: I want to transition into a full-time Data Analyst role and master automat
     summaryEt: "Klienditoe spetsialist põhiliste SQL ja Exceli oskustega, kes soovib saada andmeanalüütikuks."
   },
   {
-    id: "preset-anneli-pm",
-    name: "Anneli Sepp -> IT Project Manager",
-    nameEt: "Anneli Sepp -> IT projektijuht",
-    roleBadge: "Upskilling / Management",
-    goalId: "it-project-manager",
-    goalTitle: "IT projektijuht",
-    fileName: "cv_anneli_sepp.pdf",
-    input: `Anneli Sepp - CV Kokkuvõte
-Töökogemus:
-- 3 aastat büroojuht ja tiimikoordinaator tehnoloogiaettevõttes
-- Igapäevane suhtlemine arendajate, klientide ja juhtkonnaga
-- Koosolekute protokollimine, ajakavade koostamine ja eelarve jälgimine
-- Tööriistad: Trello, Asana, MS Office, Slack, Google Workspace
-- Keeled: Eesti keel (emakeel), Inglise keel (B2)
-Oskused: Meeskonna motiveerimine, organiseeritus, probleemide lahendamine, suhtlemisoskus.
-Soovin astuda järgmise sammu ja saada sertifitseeritud IT projektijuhiks (Agile/Scrum).`,
-    summary: "As seen in mockup: Anneli Sepp moving to IT Project Manager.",
-    summaryEt: "Disaininäidise Anneli Sepp: tiimikoordinaatorist IT projektijuhiks."
-  },
-  {
     id: "preset-html-to-frontend",
     name: "Junior HTML/CSS to Modern Frontend Dev",
     nameEt: "Junior veebihuviline -> Frontend arendaja",
