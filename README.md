@@ -85,7 +85,7 @@ Follow these simple steps to run **Õpilausuja** locally on your machine.
 
 1. **Open your terminal** (PowerShell, Command Prompt, or Bash) and navigate to the project directory:
    ```bash
-   cd c:\Users\akanoni\projects\opilausuja_1
+   cd c:\Users\akanoni\projects\opilausuja
    ```
 
 2. **Install project dependencies** (only needed on first run):
