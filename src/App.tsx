@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AppScreen, Language, GapAnalysis, PathStep, UserProfile, Goal, AISettings, Skill } from './types';
 import { storageService } from './services/storageService';
 import { analyzeProfileWithAI } from './services/aiService';
@@ -23,7 +23,6 @@ export const App: React.FC = () => {
   // Core state
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
   const [lang, setLang] = useState<Language>(() => storageService.getLanguage());
-  const [viewMode, setViewMode] = useState<'mobile' | 'desktop'>(() => storageService.getViewMode());
   const [settings, setSettings] = useState<AISettings>(() => storageService.getSettings());
   const [history, setHistory] = useState<GapAnalysis[]>(() => storageService.getAnalysisHistory());
   const [activeAnalysis, setActiveAnalysis] = useState<GapAnalysis | null>(() => storageService.getLatestAnalysis());
@@ -38,19 +37,13 @@ export const App: React.FC = () => {
   const [selectedStepDetail, setSelectedStepDetail] = useState<PathStep | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [_isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzingError, setAnalyzingError] = useState<string | null>(null);
 
-  // Sync language & view mode changes to localStorage
+  // Sync language changes to localStorage
   const handleLanguageChange = (newLang: Language) => {
     setLang(newLang);
     storageService.saveLanguage(newLang);
-  };
-
-  const handleViewModeToggle = () => {
-    const nextMode = viewMode === 'mobile' ? 'desktop' : 'mobile';
-    setViewMode(nextMode);
-    storageService.saveViewMode(nextMode);
   };
 
   const handleSaveSettings = (newSettings: AISettings) => {
@@ -277,14 +270,12 @@ export const App: React.FC = () => {
   const showStepArc = ['input', 'goal', 'analyzing', 'gap', 'path'].includes(currentScreen);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 font-sans selection:bg-teal-100 selection:text-teal-900">
+    <div className="min-h-screen bg-[#FAF9F6] flex flex-col text-stone-900 font-sans selection:bg-teal-100 selection:text-teal-900">
       {/* Top Application Header */}
       <Header
         currentScreen={currentScreen}
         lang={lang}
         onLanguageChange={handleLanguageChange}
-        viewMode={viewMode}
-        onViewModeToggle={handleViewModeToggle}
         onOpenHistory={() => setCurrentScreen('history')}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onNavigateHome={() => setCurrentScreen('welcome')}
@@ -297,71 +288,44 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Layout Container */}
-      {viewMode === 'mobile' ? (
-        /* Mobile Simulator Mode: Realistic phone frame centered */
-        <div className="flex-1 flex items-center justify-center p-2 sm:p-6 bg-gradient-to-b from-slate-100 to-slate-200">
-          <div className="relative w-full max-w-[430px] min-h-[760px] max-h-[92vh] bg-white rounded-[44px] shadow-2xl border-[10px] border-slate-800 overflow-hidden flex flex-col ring-1 ring-black/10">
-            {/* Phone Speaker & Dynamic Island */}
-            <div className="w-full bg-white pt-2.5 pb-1 flex justify-center items-center shrink-0 z-30 select-none">
-              <div className="w-24 h-4 bg-slate-900 rounded-full flex items-center justify-end px-2">
-                <div className="w-2 h-2 rounded-full bg-teal-500/80 animate-pulse" />
-              </div>
-            </div>
-
-            {/* 4-Step Promise Arc inside Mobile Frame */}
-            {showStepArc && (
-              <StepArc
-                currentStep={getStepNumber()}
-                lang={lang}
-                onStepClick={handleStepArcClick}
-              />
-            )}
-
-            {/* Scrollable Screen Content */}
-            <main className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth">
-              {renderScreenContent()}
-            </main>
-
-            {/* Mobile Bottom Navigation */}
-            <BottomNav
-              currentScreen={currentScreen}
-              onNavigate={(screen) => setCurrentScreen(screen)}
-              lang={lang}
-              hasActiveAnalysis={!!activeAnalysis}
-            />
-          </div>
+      <div className="flex-1 flex min-h-0">
+        {/* Left Desktop Sidebar: STICKY so it scrolls along with user and does not stay behind! */}
+        <div className="hidden md:block shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
+          <DesktopSidebar
+            currentScreen={currentScreen}
+            onNavigate={(screen) => setCurrentScreen(screen)}
+            lang={lang}
+            hasActiveAnalysis={!!activeAnalysis}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            savedCount={history.length}
+          />
         </div>
-      ) : (
-        /* Desktop Dashboard Layout: Sidebar + Wide Responsive View (Matching Image 2) */
-        <div className="flex-1 flex">
-          {/* Left Desktop Sidebar */}
-          <div className="hidden md:block">
-            <DesktopSidebar
-              currentScreen={currentScreen}
-              onNavigate={(screen) => setCurrentScreen(screen)}
+
+        {/* Right Main Content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {showStepArc && (
+            <StepArc
+              currentStep={getStepNumber()}
               lang={lang}
-              hasActiveAnalysis={!!activeAnalysis}
-              onOpenSettings={() => setIsSettingsOpen(true)}
-              savedCount={history.length}
+              onStepClick={handleStepArcClick}
             />
-          </div>
+          )}
 
-          {/* Right Main Content */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {showStepArc && (
-              <StepArc
-                currentStep={getStepNumber()}
-                lang={lang}
-                onStepClick={handleStepArcClick}
-              />
-            )}
-
-            <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 md:p-8">
-              {renderScreenContent()}
-            </main>
-          </div>
+          <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 md:p-8 pb-24 md:pb-12">
+            {renderScreenContent()}
+          </main>
         </div>
-      )}
+      </div>
+
+      {/* Mobile Bottom Navigation: Docked at bottom for small screens */}
+      <div className="md:hidden">
+        <BottomNav
+          currentScreen={currentScreen}
+          onNavigate={(screen) => setCurrentScreen(screen)}
+          lang={lang}
+          hasActiveAnalysis={!!activeAnalysis}
+        />
+      </div>
 
       {/* Step Detail Modal */}
       <StepDetailModal
@@ -377,11 +341,8 @@ export const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         lang={lang}
         onLanguageChange={handleLanguageChange}
-        viewMode={viewMode}
-        onViewModeChange={(mode) => {
-          setViewMode(mode);
-          storageService.saveViewMode(mode);
-        }}
+        viewMode="desktop"
+        onViewModeChange={() => {}}
         settings={settings}
         onSaveSettings={handleSaveSettings}
         onClearData={handleClearData}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Brain, Cpu, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
+import { Brain, RefreshCw, AlertCircle } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
 

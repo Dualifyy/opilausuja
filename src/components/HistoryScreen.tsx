@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { History, ArrowRight, Trash2, GitCompare, Sparkles, Plus, Award, CheckCircle2, Calendar } from 'lucide-react';
+import { History, ArrowRight, Trash2, GitCompare, Sparkles, Plus, Calendar } from 'lucide-react';
 import { Language, GapAnalysis } from '../types';
 import { translations } from '../i18n/translations';
 

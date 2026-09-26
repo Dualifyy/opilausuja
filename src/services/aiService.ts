@@ -1,21 +1,25 @@
 import { GapAnalysis, Skill, PathStep, AISettings } from '../types';
 
-export const AI_SYSTEM_PROMPT = `You are a career and learning advisor. You will be given a person's background (skills, experience, or raw CV text) and a goal (a role, field, or learning target). Your job is to:
+export const AI_SYSTEM_PROMPT = `Sa oled empaatiline ja professionaalne karjäärinõustaja ja oskuste mentor.
+Sinu ülesanne on võrrelda inimese tegelikku tausta (CV või kogemuste kirjeldus) ja tema soovitud eesmärki (töökoht või roll).
 
-1. Extract the person's current skills from their background.
-2. Identify the skills typically required for the stated goal.
-3. Compare the two lists to find overlaps (skills they already have) and gaps (skills they still need).
-4. Build an ordered, realistic learning path from their current level toward the goal — sequence it so easier/foundational gaps come before advanced ones.
-5. For each path step, give a short reason it matters, a rough time estimate, and one concrete type of resource (e.g. "short online course", "hands-on project", "certification") — do not invent specific URLs or course names you are not certain exist.
+Tee analüüs järgmiselt:
+1. Tuvasta inimese tegelikud oskused tema sisendist (nii tehnilised kui ka ülekantavad pehmed oskused).
+2. Tuvasta oskused, mida soovitud roll tegelikult nõuab.
+3. Võrdle neid ausalt:
+   - alreadyHave: oskused, mis tal on juba olemas või mis kanduvad uude rolli üle.
+   - stillNeed: konkreetsed lüngad / puuduvad oskused, mida roll eeldab.
+4. Arvuta realistlik sobivuse protsent (readinessScore 0-100) tegeliku kattuvuse põhjal.
+5. Koosta järjestatud, realistlik ja samm-sammuline õpiteekond, kus iga samm aitab omandada ühte puuduvat oskust.
+6. Kirjuta soe, toetav ja inimlik kokkuvõte, vältides külma AI kõnepruuki.
 
-Be encouraging and concrete. Do not simply dump a list of missing skills — frame the output as a path someone can actually follow.
-
-Respond ONLY with valid JSON in this exact shape, no other text:
-
+Vasta AINULT kehtiva JSON-ina:
 {
-  "readinessScore": number (0-100),
-  "alreadyHave": [{ "name": string }],
-  "stillNeed": [{ "name": string }],
+  "readinessScore": number,
+  "summaryNote": string,
+  "encouragingHeadline": string,
+  "alreadyHave": [{ "name": string, "level": "intermediate", "source": "ai_extracted", "category": "technical" | "soft" | "tool" | "language" }],
+  "stillNeed": [{ "name": string, "level": "beginner", "source": "ai_extracted", "category": "technical" | "soft" | "tool" | "language" }],
   "path": [
     {
       "order": number,
@@ -23,7 +27,14 @@ Respond ONLY with valid JSON in this exact shape, no other text:
       "why": string,
       "estimatedEffort": string,
       "suggestedResource": string,
-      "relatedSkill": string
+      "relatedSkill": string,
+      "priority": "high" | "medium",
+      "details": {
+        "overview": string,
+        "keyLearningPoints": string[],
+        "handsOnProject": string,
+        "recommendedPlatforms": string[]
+      }
     }
   ]
 }`;
@@ -55,18 +66,17 @@ export async function analyzeProfileWithAI(
     }
   }
 
-  // Built-in Smart Heuristics Engine (offline-ready, robust, high quality)
-  // Simulate natural AI thinking delay (1.4 seconds for satisfying UI feedback)
-  await new Promise((resolve) => setTimeout(resolve, 1400));
-  return generateSmartAnalysis(rawInput, goalTitle, lang);
+  // Built-in Intelligent Skill Analysis Engine (100% dependable, offline-ready, dynamic & human-centered)
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  return generateIntelligentAnalysis(rawInput, goalTitle, lang);
 }
 
-// Gemini API integration
+// External API implementations
 async function callGeminiAPI(rawInput: string, goalTitle: string, apiKey: string, lang: string): Promise<GapAnalysis> {
   const model = 'gemini-1.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
-  const userPrompt = `Language preference: ${lang === 'et' ? 'Estonian (eesti keel)' : 'English'}\n\nBackground:\n"""\n${rawInput}\n"""\n\nGoal: "${goalTitle}"`;
+  const userPrompt = `Keel: ${lang === 'et' ? 'Eesti' : 'Inglise'}\nInimese taust/CV:\n"""\n${rawInput}\n"""\nSoovitud siht/töökoht: "${goalTitle}"`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -89,13 +99,12 @@ async function callGeminiAPI(rawInput: string, goalTitle: string, apiKey: string
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return parseAIResponse(text, goalTitle, rawInput);
+  return parseAIResponse(text, goalTitle, rawInput, lang);
 }
 
-// Anthropic Claude API integration
 async function callAnthropicAPI(rawInput: string, goalTitle: string, apiKey: string, lang: string): Promise<GapAnalysis> {
   const url = 'https://api.anthropic.com/v1/messages';
-  const userPrompt = `Language preference: ${lang === 'et' ? 'Estonian (eesti keel)' : 'English'}\n\nBackground:\n"""\n${rawInput}\n"""\n\nGoal: "${goalTitle}"`;
+  const userPrompt = `Language: ${lang === 'et' ? 'Estonian' : 'English'}\nBackground:\n"""\n${rawInput}\n"""\nTarget: "${goalTitle}"`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -119,13 +128,12 @@ async function callAnthropicAPI(rawInput: string, goalTitle: string, apiKey: str
 
   const data = await response.json();
   const text = data.content?.[0]?.text;
-  return parseAIResponse(text, goalTitle, rawInput);
+  return parseAIResponse(text, goalTitle, rawInput, lang);
 }
 
-// OpenAI API integration
 async function callOpenAIAPI(rawInput: string, goalTitle: string, apiKey: string, lang: string): Promise<GapAnalysis> {
   const url = 'https://api.openai.com/v1/chat/completions';
-  const userPrompt = `Language preference: ${lang === 'et' ? 'Estonian (eesti keel)' : 'English'}\n\nBackground:\n"""\n${rawInput}\n"""\n\nGoal: "${goalTitle}"`;
+  const userPrompt = `Language: ${lang === 'et' ? 'Estonian' : 'English'}\nBackground:\n"""\n${rawInput}\n"""\nTarget: "${goalTitle}"`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -150,52 +158,51 @@ async function callOpenAIAPI(rawInput: string, goalTitle: string, apiKey: string
 
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content;
-  return parseAIResponse(text, goalTitle, rawInput);
+  return parseAIResponse(text, goalTitle, rawInput, lang);
 }
 
-function parseAIResponse(rawJson: string, goalTitle: string, rawInput: string): GapAnalysis {
+function parseAIResponse(rawJson: string, goalTitle: string, rawInput: string, lang: string): GapAnalysis {
   try {
-    // Strip markdown code fences if present
     const cleaned = rawJson.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(cleaned);
 
     const alreadyHave: Skill[] = (parsed.alreadyHave || []).map((s: any) => ({
       name: typeof s === 'string' ? s : s.name,
-      level: 'intermediate',
+      level: s.level || 'intermediate',
       source: 'ai_extracted',
-      category: 'technical'
+      category: s.category || 'technical'
     }));
 
     const stillNeed: Skill[] = (parsed.stillNeed || []).map((s: any) => ({
       name: typeof s === 'string' ? s : s.name,
-      level: 'beginner',
+      level: s.level || 'beginner',
       source: 'ai_extracted',
-      category: 'technical'
+      category: s.category || 'technical'
     }));
 
     const path: PathStep[] = (parsed.path || []).map((p: any, idx: number) => ({
       order: p.order || idx + 1,
-      title: p.title || `Master ${p.relatedSkill || 'Skill'}`,
-      why: p.why || 'Important foundation for the role.',
-      estimatedEffort: p.estimatedEffort || '~2 weeks',
-      suggestedResource: p.suggestedResource || 'Online course and hands-on mini project',
-      relatedSkill: p.relatedSkill || 'Core Skill',
+      title: p.title || `Omanda ${p.relatedSkill || 'oskus'}`,
+      why: p.why || 'Oluline samm sihi saavutamiseks.',
+      estimatedEffort: p.estimatedEffort || '~2 nädalat',
+      suggestedResource: p.suggestedResource || 'Praktiline kursus ja projekt',
+      relatedSkill: p.relatedSkill || p.title,
       completed: false,
       priority: idx < 2 ? 'high' : 'medium',
       resourceType: 'course',
-      details: {
+      details: p.details || {
         overview: p.why,
         keyLearningPoints: [
-          `Foundations and syntax of ${p.relatedSkill || p.title}`,
-          `Practical patterns & real-world workflows`,
-          `Troubleshooting and best industry practices`
+          `Põhimõisted ja baasteadmised`,
+          `Praktiline rakendamine igapäevatöös`,
+          `Levinumad parimad praktikad`
         ],
-        handsOnProject: `Build an end-to-end practical exercise showcasing ${p.relatedSkill || p.title}`,
-        recommendedPlatforms: ['Coursera', 'LinkedIn Learning', 'FreeCodeCamp']
+        handsOnProject: `Tee läbi iseseisev praktiline ülesanne teemal ${p.relatedSkill || p.title}`,
+        recommendedPlatforms: ['Coursera', 'Udemy', 'YouTube']
       }
     }));
 
-    const readinessScore = typeof parsed.readinessScore === 'number' ? parsed.readinessScore : 65;
+    const readinessScore = typeof parsed.readinessScore === 'number' ? parsed.readinessScore : 60;
 
     return {
       id: 'analysis-' + Date.now(),
@@ -208,962 +215,667 @@ function parseAIResponse(rawJson: string, goalTitle: string, rawInput: string): 
       path,
       createdAt: new Date().toISOString(),
       categoryBreakdown: {
-        technical: Math.min(95, Math.max(40, Math.round(readinessScore * 0.95))),
-        soft: Math.min(95, Math.max(50, Math.round(readinessScore * 1.15))),
+        technical: Math.min(95, Math.max(35, Math.round(readinessScore * 0.95))),
+        soft: Math.min(95, Math.max(50, Math.round(readinessScore * 1.1))),
         languages: Math.min(90, Math.max(40, Math.round(readinessScore * 0.9)))
       },
-      summaryNote: "AI analysis calculated based on semantic profile matching."
+      summaryNote: parsed.summaryNote || (lang === 'et'
+        ? "Analüüs põhineb sinu kirjeldatud oskuste ja soovitud rolli tegelike nõudmiste võrdlusel."
+        : "Analysis based on comparing your stated experience with role requirements."),
+      encouragingHeadline: parsed.encouragingHeadline || (lang === 'et'
+        ? "Sul on väärtuslik kogemus, mida saab uues rollis edukalt rakendada!"
+        : "You have strong transferable strengths ready for this career move!")
     };
   } catch (e) {
     console.error('Failed to parse AI response, fallback to smart analysis:', e);
-    return generateSmartAnalysis(rawInput, goalTitle);
+    return generateIntelligentAnalysis(rawInput, goalTitle, lang as any);
   }
 }
 
-// High-fidelity Smart Engine for 100% dependable demo execution
-export function generateSmartAnalysis(rawInput: string, goalTitle: string, lang: 'en' | 'et' = 'et'): GapAnalysis {
-  const normalizedInput = rawInput.toLowerCase();
+// -------------------------------------------------------------
+// Core Intelligent Skill Extraction & Dynamic Gap Engine
+// -------------------------------------------------------------
+
+interface SkillDefinition {
+  name: string;
+  nameEn: string;
+  category: 'technical' | 'tool' | 'soft' | 'language';
+  keywords: string[];
+}
+
+const KNOWN_SKILL_CATALOG: SkillDefinition[] = [
+  // Programming & Web
+  { name: "JavaScript / TypeScript", nameEn: "JavaScript / TypeScript", category: "technical", keywords: ["javascript", "js", "typescript", "ts", "ecmascript"] },
+  { name: "HTML & CSS", nameEn: "HTML & CSS", category: "technical", keywords: ["html", "html5", "css", "css3", "sass", "scss", "tailwind"] },
+  { name: "React", nameEn: "React", category: "technical", keywords: ["react", "reactjs", "nextjs", "next.js"] },
+  { name: "Vue.js", nameEn: "Vue.js", category: "technical", keywords: ["vue", "vuejs", "nuxt"] },
+  { name: "Python programmeerimine", nameEn: "Python Programming", category: "technical", keywords: ["python", "django", "flask", "fastapi"] },
+  { name: "Java / C#", nameEn: "Java / C#", category: "technical", keywords: ["java", "c#", ".net", "dotnet", "spring", "spring boot"] },
+  { name: "Git & versioonihaldus", nameEn: "Git Version Control", category: "tool", keywords: ["git", "github", "gitlab", "bitbucket", "versioonihaldus"] },
+  { name: "API-d ja veebiteenused", nameEn: "APIs & Web Services", category: "technical", keywords: ["api", "rest", "restful", "graphql", "json", "endpoint"] },
+
+  // Data & Analytics
+  { name: "SQL andmebaasipäringud", nameEn: "SQL Database Querying", category: "technical", keywords: ["sql", "postgresql", "mysql", "sqlite", "oracle", "database", "andmebaas"] },
+  { name: "Excel ja tabelitöötlus", nameEn: "Excel & Spreadsheets", category: "tool", keywords: ["excel", "vlookup", "xlookup", "pivot", "tabelid", "google sheets", "valemid"] },
+  { name: "Power BI / Tableau andmevisualiseerimine", nameEn: "Power BI / Tableau Data Viz", category: "tool", keywords: ["power bi", "powerbi", "tableau", "visualiseerimine", "dashboard", "graafikud", "looker"] },
+  { name: "Andmeanalüüs ja statistika", nameEn: "Data Analysis & Statistics", category: "technical", keywords: ["andmeanalüüs", "data analysis", "statistika", "pandas", "numpy", "r-keel", "analüütika"] },
+  { name: "ETL ja andmepuhastus", nameEn: "ETL & Data Cleaning", category: "technical", keywords: ["etl", "andmepuhastus", "data cleaning", "pipeline", "andmevoog"] },
+
+  // Management & Agile
+  { name: "Agile ja Scrum metoodikad", nameEn: "Agile & Scrum Methodologies", category: "technical", keywords: ["agile", "scrum", "kanban", "sprint", "standup", "retrospective", "agiilne", "sprindid"] },
+  { name: "Jira & Confluence", nameEn: "Jira & Confluence", category: "tool", keywords: ["jira", "confluence", "atlassian"] },
+  { name: "Trello, Asana & Notion", nameEn: "Trello, Asana & Notion", category: "tool", keywords: ["trello", "asana", "notion", "monday", "clickup", "ülesannete haldus"] },
+  { name: "Projekti eelarvestamine ja riskijuhtimine", nameEn: "Project Budgeting & Risk Management", category: "technical", keywords: ["eelarve", "eelarvestamine", "risk", "riskijuhtimine", "ajakava", "tähtajad", "budget"] },
+  { name: "Huvigruppide juhtimine ja tehniline suhtlus", nameEn: "Stakeholder Management & Tech Comms", category: "soft", keywords: ["huvigrupp", "stakeholder", "tellija", "klient", "läbirääkimised", "koostöö partneritega"] },
+  { name: "Meeskonna koordineerimine", nameEn: "Team Coordination", category: "soft", keywords: ["tiimitöö", "tiimijuht", "koordinaator", "meeskonna juhtimine", "tiimi juhtimine", "juhendamine", "delegeerimine"] },
+
+  // Design & UX
+  { name: "Figma & prototüüpimine", nameEn: "Figma & Prototyping", category: "tool", keywords: ["figma", "sketch", "adobe xd", "prototüüp", "prototyping", "wireframe", "wireframing"] },
+  { name: "Kasutajauuringud ja testimine", nameEn: "User Research & Usability Testing", category: "technical", keywords: ["kasutajauuring", "ux research", "usability", "kasutatavus", "intervjuud", "kasutajatestimine"] },
+  { name: "UI/UX disainipõhimõtted", nameEn: "UI/UX Design Principles", category: "technical", keywords: ["ui", "ux", "kasutajakogemus", "kasutajaliides", "design system", "tüpograafia"] },
+
+  // Customer Support, Communication & Soft Skills
+  { name: "Klienditugi ja probleemide lahendamine", nameEn: "Customer Support & Problem Solving", category: "soft", keywords: ["klienditugi", "klienditeenindus", "customer support", "customer service", "helpdesk", "piletisüsteem", "zendesk", "freshdesk"] },
+  { name: "Suhtlemisoskus ja empaatia", nameEn: "Communication & Empathy", category: "soft", keywords: ["suhtlemine", "suhtlemisoskus", "empaatia", "kuulamine", "kirjalik suhtlus", "esitlusoskus", "presentatsioon"] },
+  { name: "Organiseeritus ja ajajuhtimine", nameEn: "Organization & Time Management", category: "soft", keywords: ["ajaplaneerimine", "ajajuhtimine", "organiseeritus", "täpsus", "iseseisev", "kohusetundlik"] },
+  { name: "Kriitiline ja analüütiline mõtlemine", nameEn: "Critical & Analytical Thinking", category: "soft", keywords: ["analüütiline", "kriitiline mõtlemine", "loogiline", "süsteemne", "probleemide lahendamine"] },
+  { name: "Kiire kohanemis- ja õppimisvõime", nameEn: "Fast Adaptability & Continuous Learning", category: "soft", keywords: ["kiire õppija", "kohanemisvõime", "paindlikkus", "uudishimulik", "iseseisev õppimine"] },
+
+  // Office & Admin
+  { name: "MS Office & Google Workspace", nameEn: "MS Office & Google Workspace", category: "tool", keywords: ["word", "powerpoint", "office", "google docs", "google drive", "dokumentatsioon"] },
+  { name: "Raamatupidamine ja finantstarkvara", nameEn: "Accounting & Financial Tools", category: "tool", keywords: ["raamatupidamine", "merit aktiva", "directo", "arved", "palgaarvestus", "finants"] },
+
+  // Languages
+  { name: "Inglise keel (erialane/suhtlus)", nameEn: "English (Professional Fluency)", category: "language", keywords: ["inglise keel", "english", "b2", "c1", "b1", "c2", "rahvusvaheline"] },
+  { name: "Eesti keel (kõnes ja kirjas)", nameEn: "Estonian (Fluent)", category: "language", keywords: ["eesti keel", "emakeel", "estonian"] }
+];
+
+interface RoleRequirement {
+  goalMatch: string[];
+  requiredSkills: {
+    skillName: string;
+    skillNameEn: string;
+    category: 'technical' | 'tool' | 'soft' | 'language';
+    why: string;
+    whyEn: string;
+    effort: string;
+    resource: string;
+    resourceEn: string;
+    handsOn: string;
+    platforms: string[];
+  }[];
+}
+
+const ROLE_KNOWLEDGE_BASE: RoleRequirement[] = [
+  // 1. IT Projektijuht
+  {
+    goalMatch: ["projektijuht", "project manager", "pm", "scrum master", "it projektijuht"],
+    requiredSkills: [
+      {
+        skillName: "Agile ja Scrum metoodikad",
+        skillNameEn: "Agile & Scrum Methodologies",
+        category: "technical",
+        why: "Arendustiimid töötavad sprinditsüklites. Scrumi ja Kanbani põhjalik tundmine on IT projektijuhi igapäevane tööriist.",
+        whyEn: "Modern tech squads depend on sprint cadences. This forms the everyday operational backbone of a tech PM.",
+        effort: "~3 nädalat (4 h nädalas)",
+        resource: "Coursera: Google Agile Project Management või Scrum.org juhend",
+        resourceEn: "Coursera: Google Agile Project Management or Scrum.org Guide",
+        handsOn: "Koosta reaalse tarkvaraprojekti 2-nädalane sprindiplaan koos backlogi ja eesmärkidega.",
+        platforms: ["Coursera", "Scrum.org", "LinkedIn Learning"]
+      },
+      {
+        skillName: "Jira & Confluence haldus",
+        skillNameEn: "Jira & Confluence Administration",
+        category: "tool",
+        why: "Jira on IT-sektori standard. Selle süsteemne tundmine aitab töid selgelt jaotada ja tiimi edenemist reaalajas jälgida.",
+        whyEn: "Jira is the de-facto tech industry standard. Knowing workflows and boards separates great PMs from beginners.",
+        effort: "~1–2 nädalat (3 h nädalas)",
+        resource: "Atlassian University: Jira Fundamentals (tasuta)",
+        resourceEn: "Atlassian University: Jira Fundamentals (Free)",
+        handsOn: "Loo tasuta Jira pilvekontol toimiv Scrum board koos ülesannete, filtrite ja reeglitega.",
+        platforms: ["Atlassian University", "YouTube", "Udemy"]
+      },
+      {
+        skillName: "Projekti eelarvestamine ja riskijuhtimine",
+        skillNameEn: "Project Budgeting & Risk Management",
+        category: "technical",
+        why: "Tagab, et projekt püsib eelarves, ajakavas ning riskid lahendatakse enne kriisi tekkimist.",
+        whyEn: "Ensures projects stay within budget and timeline, catching risks before they escalate.",
+        effort: "~2 nädalat (4 h nädalas)",
+        resource: "PMI: Foundations of Project Risk Management",
+        resourceEn: "PMI: Foundations of Project Risk Management",
+        handsOn: "Koosta täielik riskiregister koos leevendusmeetmetega tarkvaraprojekti näitel.",
+        platforms: ["PMI", "Coursera", "edX"]
+      },
+      {
+        skillName: "Huvigruppide juhtimine ja tehniline suhtlus",
+        skillNameEn: "Stakeholder Management & Tech Comms",
+        category: "soft",
+        why: "Projektijuht on sild arendajate ja äripoole vahel. Selge ja diplomaatiline suhtlus hoiab ootused paigas.",
+        whyEn: "PMs bridge business stakeholders and engineers. Diplomatic communication keeps everyone aligned.",
+        effort: "~2 nädalat (3 h nädalas)",
+        resource: "Harvard Business Review: Communicating with Stakeholders",
+        resourceEn: "Harvard Business Review: Communicating with Stakeholders",
+        handsOn: "Vormista projekti staatuse ülevaade (Status Report) ja simuleeri huvigruppide koosolekut.",
+        platforms: ["LinkedIn Learning", "Harvard Business Review"]
+      },
+      {
+        skillName: "Inglise keel erialases kontekstis (B2)",
+        skillNameEn: "Professional Tech English (B2)",
+        category: "language",
+        why: "Rahvusvahelistes ja ka kohalikes IT-tiimides toimub koodidokumentatsioon, piletid ja suhtlus suures osas inglise keeles.",
+        whyEn: "Tech documentation, code reviews, and multi-national team syncs happen in English.",
+        effort: "~1–2 kuud (2 h nädalas)",
+        resource: "English for Tech Professionals (LinkedIn Learning / EF SET)",
+        resourceEn: "English for Tech Professionals (LinkedIn Learning / EF SET)",
+        handsOn: "Harjuta 15-minutilist ingliskeelset sprindi ülevaatekoosoleku läbiviimist.",
+        platforms: ["EF SET", "BBC Learning English", "Preply"]
+      },
+      {
+        skillName: "Andmepõhised mõõdikud (Velocity, Burndown, KPI)",
+        skillNameEn: "Data-Driven Delivery Metrics (Velocity, Burndown, KPI)",
+        category: "technical",
+        why: "Projektijuht peab tegema otsuseid andmete, tiimi kiiruse ja ressursside tegeliku kulu põhjal.",
+        whyEn: "Great PMs lead with metrics: team velocity, burndown trends, and delivery forecasts.",
+        effort: "~1 nädal (4 h)",
+        resource: "Agile Metrics for Delivery Teams (Scrum.org / Coursera)",
+        resourceEn: "Agile Metrics for Delivery Teams (Scrum.org / Coursera)",
+        handsOn: "Loo Google Sheetsis või Excelis burndown graafik ja tiimi kiiruse arvutustabel.",
+        platforms: ["YouTube", "Coursera", "DataCamp"]
+      }
+    ]
+  },
+
+  // 2. Andmeanalüütik
+  {
+    goalMatch: ["andmeanalüütik", "data analyst", "andmed", "data analysis", "ärianalüütik", "business analyst"],
+    requiredSkills: [
+      {
+        skillName: "SQL andmebaasipäringud",
+        skillNameEn: "SQL Database Querying",
+        category: "technical",
+        why: "Andmeanalüütiku põhitööriist andmete kättesaamiseks. Vajalik on osata liitmisi (JOIN), grupeerimisi ja filtreid.",
+        whyEn: "The essential core tool for extracting relational data. Requires proficiency in JOINs, GROUP BY, and aggregations.",
+        effort: "~3–4 nädalat (5 h nädalas)",
+        resource: "Mode Analytics SQL Tutorial & Khan Academy SQL (tasuta)",
+        resourceEn: "Mode Analytics SQL Tutorial & Khan Academy SQL (Free)",
+        handsOn: "Kirjuta 15 praktilist SQL päringut reaalsete müügi- ja kliendiandmete analüüsimiseks.",
+        platforms: ["Mode Analytics", "LeetCode SQL", "Coursera"]
+      },
+      {
+        skillName: "Excel ja tabelitöötlus edasijõudnutele",
+        skillNameEn: "Advanced Excel & Spreadsheets",
+        category: "tool",
+        why: "Kiireks andmete kontrolliks, prototüüpimiseks ja juhtkonnale lihtsate ülevaadete tegemiseks.",
+        whyEn: "Crucial for fast ad-hoc verification, financial models, and quick executive summaries.",
+        effort: "~2 nädalat (4 h nädalas)",
+        resource: "Excelis edasijõudnutele: Pivot, VLOOKUP/XLOOKUP ja Power Query",
+        resourceEn: "Advanced Excel: Pivot Tables, XLOOKUP & Power Query",
+        handsOn: "Loo automaatselt uuenev Exceli müügikoond Power Query abil.",
+        platforms: ["YouTube", "LinkedIn Learning", "DataCamp"]
+      },
+      {
+        skillName: "Power BI / Tableau andmevisualiseerimine",
+        skillNameEn: "Power BI / Tableau Data Viz",
+        category: "tool",
+        why: "Äripoolele tuleb tulemusi esitada selgete ja interaktiivsete graafikutena.",
+        whyEn: "Translating raw database rows into interactive executive dashboards that guide decisions.",
+        effort: "~3 nädalat (4 h nädalas)",
+        resource: "Microsoft Power BI Data Analyst sertifikaadikursus",
+        resourceEn: "Microsoft Power BI Data Analyst Certificate",
+        handsOn: "Ehita interaktiivne juhtimislaud (dashboard), mis visualiseerib ettevõtte tulemusmõõdikuid.",
+        platforms: ["Microsoft Learn", "Coursera", "YouTube"]
+      },
+      {
+        skillName: "Andmeanalüüs ja statistika (Python või R)",
+        skillNameEn: "Data Analysis & Statistics (Python / R)",
+        category: "technical",
+        why: "Võimaldab automatiseerida analüüse, leida seoseid ja teha trendiprognoose suuremate andmehulkade puhul.",
+        whyEn: "Enables automation, statistical modeling, and handling datasets beyond Excel's capacity.",
+        effort: "~4 nädalat (5 h nädalas)",
+        resource: "Python for Data Analysis (Pandas, NumPy) - Kaggle Learn (tasuta)",
+        resourceEn: "Python for Data Analysis (Pandas, NumPy) - Kaggle Learn",
+        handsOn: "Puhasta ja analüüsi reaalset andmestikku Jupyter Notebookis Pandas teegi abil.",
+        platforms: ["Kaggle", "DataCamp", "FreeCodeCamp"]
+      },
+      {
+        skillName: "Kriitiline ja analüütiline mõtlemine",
+        skillNameEn: "Critical & Analytical Thinking",
+        category: "soft",
+        why: "Andmed ise ei ütle midagi ilma oskuseta küsida õigeid küsimusi ja märgata anomaaliaid.",
+        whyEn: "Numbers alone mean nothing without the curiosity to ask the right questions and spot anomalies.",
+        effort: "~2 nädalat (2 h nädalas)",
+        resource: "Data-Driven Decision Making & Business Storytelling",
+        resourceEn: "Data-Driven Decision Making & Business Storytelling",
+        handsOn: "Sõnasta 3 ärilist hüpoteesi ja pane kokku 5-slaidiline esitlus tulemustest juhtkonnale.",
+        platforms: ["Coursera", "Harvard Business Review"]
+      }
+    ]
+  },
+
+  // 3. Veebiarendaja (Frontend)
+  {
+    goalMatch: ["frontend", "veebiarendaja", "frontend arendaja", "web developer", "react arendaja", "developer"],
+    requiredSkills: [
+      {
+        skillName: "HTML & CSS kaasaegsel tasemel",
+        skillNameEn: "Modern Semantic HTML & CSS",
+        category: "technical",
+        why: "Iga veebirakenduse vundament: semantika, ligipääsetavus (a11y) ja mobiilisõbralik kujundus.",
+        whyEn: "The bedrock of web development: semantic structure, accessibility (a11y), and responsive design.",
+        effort: "~2–3 nädalat (5 h nädalas)",
+        resource: "MDN Web Docs & FreeCodeCamp Responsive Web Design",
+        resourceEn: "MDN Web Docs & FreeCodeCamp Responsive Web Design",
+        handsOn: "Ehita puhtas HTML/CSS-is täielikult mobiilile ja arvutile kohanduv maandumisleht.",
+        platforms: ["MDN Web Docs", "FreeCodeCamp", "Frontend Mentor"]
+      },
+      {
+        skillName: "JavaScript / TypeScript",
+        skillNameEn: "JavaScript / TypeScript",
+        category: "technical",
+        why: "Veebi loogika keel. Kaasaegne arendus eeldab ES6+ süntaksi, DOM-i ja asünkroonse koodi (async/await) valdamist.",
+        whyEn: "The core language of modern browsers: ES6+, asynchronous promises, and type safety with TypeScript.",
+        effort: "~4–6 nädalat (6 h nädalas)",
+        resource: "javascript.info & TypeScript Handbook",
+        resourceEn: "javascript.info & TypeScript Handbook",
+        handsOn: "Programmeeri interaktiivne veebirakendus (nt ülesannete haldur või valuutakalkulaator) puhtas TypeScriptis.",
+        platforms: ["javascript.info", "Scrimba", "FreeCodeCamp"]
+      },
+      {
+        skillName: "React ja kaasaegsed raamistikud",
+        skillNameEn: "React & Component Architecture",
+        category: "technical",
+        why: "Enim nõutud frontend-tehnoloogia tööturul. Õpi ehitama korduvkasutatavaid komponente ja haldama olekut (state).",
+        whyEn: "The most sought-after UI library. Teaches component architecture, hooks, and clean state flow.",
+        effort: "~4 nädalat (6 h nädalas)",
+        resource: "React.dev ametlik interaktiivne õpetus",
+        resourceEn: "React.dev official interactive documentation",
+        handsOn: "Ehita mitme lehega React rakendus koos otsingu, filtrite ja API andmete kuvamisega.",
+        platforms: ["React.dev", "Scrimba", "Coursera"]
+      },
+      {
+        skillName: "Git & versioonihaldus",
+        skillNameEn: "Git Version Control & GitHub",
+        category: "tool",
+        why: "Ilma Gitita ei tööta ükski tarkvaratiim. Oluline on osata harusid luua, pull request'e teha ja konflikte lahendada.",
+        whyEn: "Universal team collaboration requirement. Branching, PRs, and collaborative merges.",
+        effort: "~1 nädal (4 h)",
+        resource: "Git Immersion & GitHub Skills",
+        resourceEn: "Git Immersion & GitHub Skills",
+        handsOn: "Avalikusta oma projektid GitHubis ja seadista tasuta veebimajutus GitHub Pages või Vercel keskkonnas.",
+        platforms: ["GitHub", "YouTube", "Atlassian Git Guide"]
+      },
+      {
+        skillName: "API-d ja veebiteenused",
+        skillNameEn: "REST APIs & Asynchronous Data Fetching",
+        category: "technical",
+        why: "Frontend peab oskama suhelda serveriga, kuvada laadimise ja vigade olekuid ning saata päringuid.",
+        whyEn: "Frontends must fetch data asynchronously, handle loading states, and handle network errors cleanly.",
+        effort: "~2 nädalat (4 h nädalas)",
+        resource: "Postman API 101 & Fetch/Axios juhendid",
+        resourceEn: "Postman API 101 & Fetch/Axios Tutorials",
+        handsOn: "Ühenda oma rakendus avaliku API-ga (nt ilmateade, riiklikud andmed või filmide andmebaas).",
+        platforms: ["MDN", "FreeCodeCamp", "Postman Academy"]
+      }
+    ]
+  },
+
+  // 4. UX/UI Disainer
+  {
+    goalMatch: ["disainer", "designer", "ux", "ui", "kasutajakogemus", "tootedisainer"],
+    requiredSkills: [
+      {
+        skillName: "Figma & prototüüpimine",
+        skillNameEn: "Figma & Interactive Prototyping",
+        category: "tool",
+        why: "Standardtööriist disainimaailmas. Auto-layout, komponendid ja interaktiivsed prototüübid.",
+        whyEn: "The undisputed industry standard for digital product design. Auto-layout, components, and clickable prototypes.",
+        effort: "~3 nädalat (5 h nädalas)",
+        resource: "Figma官方 YouTube õpetused ja Figma Community failid",
+        resourceEn: "Figma Official YouTube Tutorials & Community Practice",
+        handsOn: "Disaini mobiilirakenduse 5 põhivaadet Figmas koos töötavate nuppude ja animatsioonidega.",
+        platforms: ["Figma Academy", "YouTube", "Coursera"]
+      },
+      {
+        skillName: "Kasutajauuringud ja testimine",
+        skillNameEn: "User Research & Usability Testing",
+        category: "technical",
+        why: "Hea disain lähtub kasutaja tegelikest probleemidest, mitte oletustest.",
+        whyEn: "Great interfaces solve real user pain points, proven through testing rather than guesswork.",
+        effort: "~2–3 nädalat (3 h nädalas)",
+        resource: "Nielsen Norman Group UX Basics & Interaction Design Foundation",
+        resourceEn: "Nielsen Norman Group UX Basics & IxDF",
+        handsOn: "Viia läbi 3 kasutajatesti oma prototüübiga ja kaardista kitsaskohad.",
+        platforms: ["Interaction Design Foundation", "Nielsen Norman Group"]
+      },
+      {
+        skillName: "UI/UX disainipõhimõtted ja disainisüsteemid",
+        skillNameEn: "Design Systems, Typography & Color Theory",
+        category: "technical",
+        why: "Tüpograafia, hierarhia, vahed (spacing) ja värvikasutus loovad professionaalse ja usaldusväärse mulje.",
+        whyEn: "Visual rhythm, typography scales, accessible contrast, and reusable design tokens.",
+        effort: "~3 nädalat (4 h nädalas)",
+        resource: "Refactoring UI raamat & Google Material Design juhend",
+        resourceEn: "Refactoring UI Book & Material Design Guidelines",
+        handsOn: "Loo mini-disainisüsteem: värvipalett, nupud, sisestusväljad ja tüpograafiline skaala.",
+        platforms: ["Refactoring UI", "Material Design", "Medium UX Planet"]
+      }
+    ]
+  }
+];
+
+// Helper to extract actual skills from user's raw input
+function extractUserSkills(rawInput: string, isEstonian: boolean): Skill[] {
+  const normalized = rawInput.toLowerCase();
+  const extractedMap = new Map<string, Skill>();
+
+  // 1. Scan against skill catalog
+  for (const def of KNOWN_SKILL_CATALOG) {
+    const hasMatch = def.keywords.some((kw) => {
+      // Use boundary check or substring check
+      const regex = new RegExp(`\\b${kw}\\b`, 'i');
+      return regex.test(normalized) || normalized.includes(kw);
+    });
+
+    if (hasMatch) {
+      extractedMap.set(def.name, {
+        name: isEstonian ? def.name : def.nameEn,
+        level: normalized.includes('kogenud') || normalized.includes('senior') || normalized.includes('advanced')
+          ? 'advanced'
+          : normalized.includes('algaja') || normalized.includes('beginner') || normalized.includes('baas')
+            ? 'beginner'
+            : 'intermediate',
+        source: 'ai_extracted',
+        category: def.category
+      });
+    }
+  }
+
+  // 2. Scan for user-listed items (lines with bullets or commas)
+  const lines = rawInput.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^[•\-*]\s*(.+)$/.test(trimmed)) {
+      const match = trimmed.replace(/^[•\-*]\s*/, '').trim();
+      if (match.length > 2 && match.length < 40 && !extractedMap.has(match)) {
+        extractedMap.set(match, {
+          name: match,
+          level: 'intermediate',
+          source: 'ai_extracted',
+          category: 'technical'
+        });
+      }
+    }
+  }
+
+  // 3. Fallback: if user input is very short or general, detect baseline strengths
+  if (extractedMap.size === 0) {
+    if (normalized.includes('klient') || normalized.includes('tugi') || normalized.includes('teenindus')) {
+      extractedMap.set('Klienditugi', {
+        name: isEstonian ? "Klienditugi ja probleemide lahendamine" : "Customer Support & Problem Solving",
+        level: "intermediate",
+        source: "ai_extracted",
+        category: "soft"
+      });
+    }
+    if (normalized.includes('töö') || normalized.includes('kogemus')) {
+      extractedMap.set('Meeskonnatöö', {
+        name: isEstonian ? "Meeskonnatöö ja kohusetundlikkus" : "Teamwork & Reliability",
+        level: "intermediate",
+        source: "ai_extracted",
+        category: "soft"
+      });
+      extractedMap.set('Õppimisvõime', {
+        name: isEstonian ? "Kiire kohanemis- ja õppimisvõime" : "Fast Adaptability & Learning",
+        level: "intermediate",
+        source: "ai_extracted",
+        category: "soft"
+      });
+    }
+  }
+
+  // If still empty (e.g. random text), add baseline adaptable qualities
+  if (extractedMap.size === 0) {
+    extractedMap.set('Analüütiline mõtlemine', {
+      name: isEstonian ? "Analüütiline mõtlemine" : "Analytical Thinking",
+      level: "intermediate",
+      source: "ai_extracted",
+      category: "soft"
+    });
+    extractedMap.set('Eesmärgile pühendumine', {
+      name: isEstonian ? "Eesmärgipärasus ja kohusetunne" : "Goal Dedication & Ownership",
+      level: "intermediate",
+      source: "ai_extracted",
+      category: "soft"
+    });
+  }
+
+  return Array.from(extractedMap.values());
+}
+
+// Helper to determine target role requirements
+function getTargetRoleRequirements(goalTitle: string, _isEstonian: boolean) {
   const normalizedGoal = goalTitle.toLowerCase();
-  const isEstonian = lang === 'et' || /[äöõü]|klienditugi|oskan|töökogemus|projektijuht/i.test(rawInput);
 
-  // Profile 1: IT Project Manager / IT Projektijuht (Matching Image 2 exactly!)
-  if (normalizedGoal.includes('projektijuht') || normalizedGoal.includes('project manager')) {
-    const alreadyHave: Skill[] = isEstonian ? [
-      { name: "Meeskonna koordineerimine", level: "intermediate", source: "ai_extracted", category: "soft" },
-      { name: "Suhtlemisoskus ja klienditugi", level: "advanced", source: "ai_extracted", category: "soft" },
-      { name: "Organiseeritus ja ajaplaneerimine", level: "advanced", source: "ai_extracted", category: "soft" },
-      { name: "Trello & Asana", level: "intermediate", source: "ai_extracted", category: "tool" },
-      { name: "MS Office & Google Workspace", level: "advanced", source: "ai_extracted", category: "tool" },
-      { name: "Eesti keel (emakeel)", level: "advanced", source: "ai_extracted", category: "language" },
-    ] : [
-      { name: "Team Coordination", level: "intermediate", source: "ai_extracted", category: "soft" },
-      { name: "Client & Stakeholder Communication", level: "advanced", source: "ai_extracted", category: "soft" },
-      { name: "Organizational Planning", level: "advanced", source: "ai_extracted", category: "soft" },
-      { name: "Trello & Asana Workspaces", level: "intermediate", source: "ai_extracted", category: "tool" },
-      { name: "MS Office & Documentation", level: "advanced", source: "ai_extracted", category: "tool" },
-      { name: "Fluency in English & Local Language", level: "advanced", source: "ai_extracted", category: "language" },
-    ];
-
-    const stillNeed: Skill[] = isEstonian ? [
-      { name: "Agile ja Scrum metoodikad", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Inglise keel erialases kontekstis (B2)", level: "beginner", source: "ai_extracted", category: "language" },
-      { name: "Andmeanalüüs (Excel / Power BI)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Digitaalsed arendustööriistad (Jira, Confluence)", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "Eelarvestamine ja riskijuhtimine", level: "beginner", source: "ai_extracted", category: "technical" },
-    ] : [
-      { name: "Agile & Scrum Methodologies", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Business English Fluency (B2/C1)", level: "beginner", source: "ai_extracted", category: "language" },
-      { name: "Data-Driven Decision Making (Power BI / Excel)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Jira Software & Sprint Backlogs", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "IT Budgeting & Risk Management", level: "beginner", source: "ai_extracted", category: "technical" },
-    ];
-
-    const path: PathStep[] = isEstonian ? [
-      {
-        order: 1,
-        title: "Agile projektijuhtimine (Scrum ja Kanban)",
-        why: "Kaasaegsed IT-tiimid toetuvad agiilsetele sprinditsüklitele. See on IT projektijuhi igapäevane põhiraamistik.",
-        estimatedEffort: "~4 nädalat (5 h/nädal)",
-        suggestedResource: "Coursera: Google Agile Project Management sertifikaat",
-        relatedSkill: "Agile projektijuhtimine",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Õpi juhtima sprinte, stand-up koosolekuid, tagasivaateid (retro) ning haldama toote backlogi vastavalt Scrumi reeglitele.",
-          keyLearningPoints: [
-            "Scrumi tseremooniad: Sprint planning, daily standup, sprint review & retrospective",
-            "Kanbani voog ja WIP (Work In Progress) piirangud",
-            "User Story'de defineerimine ja 'Definition of Done'"
-          ],
-          handsOnProject: "Koosta reaalse tarkvaraprojekti 2-nädalane sprindiplaan koos rollide ja eesmärkidega.",
-          recommendedPlatforms: ["Coursera", "Scrum.org", "LinkedIn Learning"]
-        }
-      },
-      {
-        order: 2,
-        title: "Erialane inglise keel (B2 tase)",
-        why: "Rahvusvahelistes IT-meeskondades toimub kogu arendusdokumentatsioon ja suhtlus inglise keeles.",
-        estimatedEffort: "~3-6 kuud (2 h/nädal)",
-        suggestedResource: "EF SET test & English for Tech Professionals (LinkedIn Learning)",
-        relatedSkill: "Inglise keel (B2)",
-        completed: false,
-        priority: "high",
-        resourceType: "reading",
-        details: {
-          overview: "Tõsta oma enesekindlust tehnilises suhtluses, koosolekute juhtimises ja kirjalikus korrespondentsis.",
-          keyLearningPoints: [
-            "IT spetsiifiline sõnavara: deployment, backlog, blockers, pull requests",
-            "Efektiivsete koosolekute juhtimine inglise keeles",
-            "Selge ja diplomaatiline e-kirjavahetus partneritega"
-          ],
-          handsOnProject: "Simuleeri 15-minutilist ingliskeelset sprindi ülevaatekoosolekut meeskonnaga.",
-          recommendedPlatforms: ["EF SET", "BBC Learning English", "Preply"]
-        }
-      },
-      {
-        order: 3,
-        title: "Andmeanalüüs ja tulemusmõõdikud (Excel & Power BI)",
-        why: "Projektijuht peab tegema otsuseid andmete, kiiruse (velocity) ja ressursside kulu põhjal.",
-        estimatedEffort: "~2 nädalat (4 h/nädal)",
-        suggestedResource: "LinkedIn Learning: Data-Driven Decision Making for PMs",
-        relatedSkill: "Andmeanalüüs (Excel / Power BI)",
-        completed: false,
-        priority: "medium",
-        resourceType: "course",
-        details: {
-          overview: "Õpi looma selgeid armatuurlaudu projekti edenemise ja eelarve visualiseerimiseks.",
-          keyLearningPoints: [
-            "Burndown ja burnup graafikute tõlgendamine",
-            "Projekti eelarve ja ressursikulude jälgimine tabelites",
-            "Juhtkonnale esitletavate KPI aruannete koostamine"
-          ],
-          handsOnProject: "Loo interaktiivne Power BI või Google Sheets dashboard, mis näitab projekti kulusid ja tähtaegu.",
-          recommendedPlatforms: ["LinkedIn Learning", "DataCamp", "YouTube"]
-        }
-      },
-      {
-        order: 4,
-        title: "Meeskonna juhtimine ja motivatsioon",
-        why: "Inimeste motiveerimine, takistuste eemaldamine ja psühholoogilise turvalisuse tagamine tiimis.",
-        estimatedEffort: "~2 nädalat (3 h/nädal)",
-        suggestedResource: "Skillshare: Empathetic Leadership in Tech Teams",
-        relatedSkill: "Meeskonna juhtimine",
-        completed: false,
-        priority: "medium",
-        resourceType: "course",
-        details: {
-          overview: "Arenda oskusi konfliktide lahendamiseks, konstruktiivse tagasiside andmiseks ja arendajate toetamiseks.",
-          keyLearningPoints: [
-            "1-on-1 vestluste läbiviimise parimad praktikad",
-            "Konfliktide ennetamine ja lahendamine arendustiimis",
-            "Tiimiliikmete motiveerimine ja läbipõlemise ennetamine"
-          ],
-          handsOnProject: "Koosta oma meeskonna kokkulepete ja väärtuste juhend (Team Working Agreement).",
-          recommendedPlatforms: ["Skillshare", "Coursera", "Harvard Business Review"]
-        }
-      },
-      {
-        order: 5,
-        title: "Digitaalsed arendustööriistad (Jira, Confluence, Slack)",
-        why: "Jira on IT-sektori standard. Selle süsteemne tundmine eristab kogenud projektijuhti amatöörist.",
-        estimatedEffort: "~1 nädal (5 h)",
-        suggestedResource: "Atlassian University: Jira Fundamentals Certification (tasuta)",
-        relatedSkill: "Digitaalsed tööriistad",
-        completed: false,
-        priority: "medium",
-        resourceType: "certification",
-        details: {
-          overview: "Omanda oskus konfigureerida Jira töölaudu, automatiseerida teavitusi ning hallata dokumentatsiooni Confluences.",
-          keyLearningPoints: [
-            "Jira Scrum Boardi seadistamine ja epikute jagamine taskideks",
-            "Confluence'i teadmusbaasi (Knowledge Base) struktureerimine",
-            "Töövoogude (workflow) automatiseerimine"
-          ],
-          handsOnProject: "Loo tasuta Jira pilvekontol toimiv projekt koos reeglite ja filtritega.",
-          recommendedPlatforms: ["Atlassian University", "YouTube", "Udemy"]
-        }
-      },
-      {
-        order: 6,
-        title: "Projektide planeerimine ja riskijuhtimine",
-        why: "Tagab, et projekt püsib eelarves, ajakavas ja riskid lahendatakse enne kriisi tekkimist.",
-        estimatedEffort: "~2 nädalat (4 h/nädal)",
-        suggestedResource: "PMI: Foundations of Project Risk Management",
-        relatedSkill: "Projektide planeerimine",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Õpi koostama riskimaatrikseid, eelarveprognoose ning juhtima huvigruppide ootusi kriitilistes etappides.",
-          keyLearningPoints: [
-            "Riskide tuvastamine ja tõenäosuse/mõju maatriks",
-            "Kriitilise tee meetod (Critical Path Method)",
-            "Muudatuste juhtimise protsess (Change Request Flow)"
-          ],
-          handsOnProject: "Koosta täielik riskiregister koos leevendusmeetmetega hüpoteetilisele tarkvaraprojektile.",
-          recommendedPlatforms: ["Project Management Institute (PMI)", "Coursera"]
-        }
-      }
-    ] : [
-      {
-        order: 1,
-        title: "Agile & Scrum Project Management",
-        why: "Modern tech squads depend on sprint cadences. This forms the everyday operational backbone of a tech PM.",
-        estimatedEffort: "~4 weeks (5 hrs/week)",
-        suggestedResource: "Coursera: Google Agile Project Management Certificate",
-        relatedSkill: "Agile & Scrum",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Master running standups, sprint reviews, retrospectives, and keeping sprint backlogs organized.",
-          keyLearningPoints: ["Scrum ceremonies and artifacts", "Kanban WIP limits", "User story writing & Definition of Done"],
-          handsOnProject: "Plan a full 2-week software sprint backlog with story points.",
-          recommendedPlatforms: ["Coursera", "Scrum.org"]
-        }
-      },
-      {
-        order: 2,
-        title: "Technical & Business English (B2/C1)",
-        why: "Tech documentation, asynchronous PR reviews, and multi-national team syncs happen in English.",
-        estimatedEffort: "~3-6 months (2 hrs/week)",
-        suggestedResource: "EF SET Tech English Practice & LinkedIn Learning",
-        relatedSkill: "English Fluency",
-        completed: false,
-        priority: "high",
-        resourceType: "reading",
-        details: {
-          overview: "Build confidence presenting demos, articulating technical trade-offs, and negotiating scope.",
-          keyLearningPoints: ["Tech industry vernacular", "Leading async updates", "Diplomatic stakeholder negotiation"],
-          handsOnProject: "Deliver a recorded 10-minute sprint demo in English.",
-          recommendedPlatforms: ["EF SET", "LinkedIn Learning"]
-        }
-      },
-      {
-        order: 3,
-        title: "Data-Driven Project Metrics (Excel & Power BI)",
-        why: "Great PMs lead with metrics: team velocity, cycle time, burndown trends, and ROI forecasting.",
-        estimatedEffort: "~2 weeks (4 hrs/week)",
-        suggestedResource: "LinkedIn Learning: Data-Driven Decision Making for PMs",
-        relatedSkill: "Data Analysis",
-        completed: false,
-        priority: "medium",
-        resourceType: "course",
-        details: {
-          overview: "Build visual management reporting decks and dashboards that track cost against roadmap.",
-          keyLearningPoints: ["Burndown & Velocity charts", "Budget tracking models", "Executive KPI dashboards"],
-          handsOnProject: "Build an interactive Google Sheets / Power BI delivery tracker.",
-          recommendedPlatforms: ["LinkedIn Learning", "DataCamp"]
-        }
-      },
-      {
-        order: 4,
-        title: "People Leadership & High-Performance Teams",
-        why: "Technical teams thrive when leaders remove blockers, nurture trust, and inspire autonomy.",
-        estimatedEffort: "~2 weeks (3 hrs/week)",
-        suggestedResource: "Skillshare: Empathetic Leadership in Tech Teams",
-        relatedSkill: "Team Leadership",
-        completed: false,
-        priority: "medium",
-        resourceType: "course",
-        details: {
-          overview: "Techniques for impactful 1-on-1s, psychological safety, and resolving technical stalemates.",
-          keyLearningPoints: ["High-impact 1-on-1 coaching", "De-escalating engineering conflict", "Preventing team burnout"],
-          handsOnProject: "Draft a collaborative Team Working Agreement.",
-          recommendedPlatforms: ["Skillshare", "Coursera"]
-        }
-      },
-      {
-        order: 5,
-        title: "Jira & Atlassian Ecosystem Mastery",
-        why: "Jira is the de-facto industry standard. Deep knowledge separates high-caliber PMs from amateurs.",
-        estimatedEffort: "~1 week (5 hrs)",
-        suggestedResource: "Atlassian University: Jira Fundamentals Certification (Free)",
-        relatedSkill: "Jira & Digital Tools",
-        completed: false,
-        priority: "medium",
-        resourceType: "certification",
-        details: {
-          overview: "Learn agile board configuration, JQL filter queries, automation triggers, and Confluence docs.",
-          keyLearningPoints: ["Kanban vs Scrum board setups", "JQL advanced queries", "Release version tracking"],
-          handsOnProject: "Configure a complete live Jira Cloud project with custom workflows.",
-          recommendedPlatforms: ["Atlassian University", "YouTube"]
-        }
-      },
-      {
-        order: 6,
-        title: "Budgeting & Proactive Risk Management",
-        why: "Keeps critical initiatives on schedule and prevents budget overruns before they escalate.",
-        estimatedEffort: "~2 weeks (4 hrs/week)",
-        suggestedResource: "PMI: Foundations of Project Risk Management",
-        relatedSkill: "Risk Management",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Understand critical path methods, contingency planning, and stakeholder alignment.",
-          keyLearningPoints: ["Probability & Impact matrix", "Change control workflows", "Contingency reserve budgeting"],
-          handsOnProject: "Create a full software release risk register with mitigation triggers.",
-          recommendedPlatforms: ["PMI", "Coursera"]
-        }
-      }
-    ];
-
-    return {
-      id: 'analysis-' + Date.now(),
-      profileId: 'profile-pm',
-      goalId: 'it-project-manager',
-      goalTitle: isEstonian ? "IT projektijuht" : "IT Project Manager",
-      readinessScore: 68, // Exactly matching Image 2 mockup!
-      alreadyHave,
-      stillNeed,
-      path,
-      createdAt: new Date().toISOString(),
-      categoryBreakdown: {
-        technical: 70,
-        soft: 80,
-        languages: 60
-      },
-      summaryNote: isEstonian
-        ? "Sinu oskused kattuvad hästi, kuid töökoha jaoks on veel 3 olulist oskust, mida saad tugevdada."
-        : "Your background aligns very well, with 3 key core areas you can strengthen to be job-ready.",
-      encouragingHeadline: isEstonian ? "Oled 3 sammu kaugusel valmisolekust!" : "You're 3 steps from ready!"
-    };
-  }
-
-  // Profile 2: Data Analyst (Matching Section 12 demo script!)
-  if (normalizedGoal.includes('data') || normalizedGoal.includes('analüütik') || normalizedGoal.includes('analyst')) {
-    const hasSql = normalizedInput.includes('sql');
-    const hasExcel = normalizedInput.includes('excel');
-
-    const alreadyHave: Skill[] = [
-      ...(hasExcel ? [{ name: isEstonian ? "Excel ja tabelitöötlus" : "Advanced Excel & Pivot Tables", level: "intermediate" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      ...(hasSql ? [{ name: isEstonian ? "SQL baaspäringud (SELECT, JOIN)" : "Basic SQL Queries (SELECT, JOIN)", level: "beginner" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      { name: isEstonian ? "Kliendisuhtlus ja probleemilahendus" : "Stakeholder Communication & Problem Solving", level: "advanced", source: "ai_extracted", category: "soft" },
-      { name: isEstonian ? "Detailitäpsus ja vigade otsing" : "Attention to Detail & Troubleshooting", level: "intermediate", source: "ai_extracted", category: "soft" },
-      { name: isEstonian ? "Inglise keel (C1)" : "English Proficiency (C1)", level: "advanced", source: "ai_extracted", category: "language" },
-    ];
-
-    const stillNeed: Skill[] = isEstonian ? [
-      { name: "Edasijõudnud SQL (aknafunktsioonid, CTE)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Python andmeanalüüsiks (Pandas, NumPy)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Power BI või Tableau visualiseerimine", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "Statistika ja hüpoteeside testimine", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Andmelao kontseptsioonid (ETL/DWH)", level: "beginner", source: "ai_extracted", category: "technical" },
-    ] : [
-      { name: "Advanced SQL (Window functions, CTEs)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Python for Data Analysis (Pandas, NumPy)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "BI Dashboards (Power BI or Tableau)", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "Practical Business Statistics & A/B Testing", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Data Warehouse Foundations & ETL", level: "beginner", source: "ai_extracted", category: "technical" },
-    ];
-
-    const path: PathStep[] = isEstonian ? [
-      {
-        order: 1,
-        title: "Edasijõudnud SQL ja andmete teisendamine",
-        why: "Kuna sul on baas-SQL juba käpas, on aknafunktsioonide ja CTE-de omandamine kiireim viis professionaalse tasemeni jõudmiseks.",
-        estimatedEffort: "~2 nädalat (5 h/nädal)",
-        suggestedResource: "DataCamp: Intermediate SQL & Mode Analytics SQL Tutorial",
-        relatedSkill: "Edasijõudnud SQL",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Kirjuta keerukaid analüütilisi päringuid suurte andmemahtude filtreerimiseks, agregeerimiseks ja trendide leidmiseks.",
-          keyLearningPoints: ["Aknafunktsioonid: ROW_NUMBER, RANK, DENSE_RANK, LAG/LEAD", "Common Table Expressions (WITH klausel)", "Indekseerimine ja päringute optimeerimine"],
-          handsOnProject: "Analüüsi e-kaubanduse tehingute andmebaasi ja koosta klientide kordusostude analüüs.",
-          recommendedPlatforms: ["DataCamp", "Coursera", "LeetCode Database"]
-        }
-      },
-      {
-        order: 2,
-        title: "Power BI või Tableau juhtimislauad",
-        why: "Ärijuhid vajavad selgeid visuaale. Interaktiivsete dashboardide loomine teeb sinu tulemused kõigile mõistetavaks.",
-        estimatedEffort: "~3 nädalat (4 h/nädal)",
-        suggestedResource: "Coursera: Microsoft Power BI Data Analyst Professional Certificate",
-        relatedSkill: "Power BI / Tableau",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Õpi importima andmeid erinevatest allikatest, looma andmemudeleid (Star schema) ning kujundama juhtpaneele.",
-          keyLearningPoints: ["DAX baasvalemid (CALCULATE, RELATED, SUMX)", "Andmemudelid ja seosed (1:N, N:M)", "UX disain ja värviteooria äriaruannetes"],
-          handsOnProject: "Loo ettevõtte müügi- ja kliendirahulolu reaalajas armatuurlaud.",
-          recommendedPlatforms: ["Coursera", "Microsoft Learn", "Maven Analytics"]
-        }
-      },
-      {
-        order: 3,
-        title: "Python andmeteaduse alused (Pandas & Seaborn)",
-        why: "Python võimaldab automatiseerida rutiinset andmetöötlust ning teha sügavamat statistilist analüüsi, milleks Excel ei küündi.",
-        estimatedEffort: "~4 nädalat (5 h/nädal)",
-        suggestedResource: "FreeCodeCamp: Data Analysis with Python (Tasuta)",
-        relatedSkill: "Python (Pandas)",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Saa tuttavaks Jupyter Notebooki keskkonnaga ning õpi andmeid puhastama, filtreerima ja graafikuid looma.",
-          keyLearningPoints: ["Pandas DataFrame manipuleerimine ja puuduvate väärtuste täitmine", "Matplotlib ja Seaborn visualiseerimine", "CSV ja API andmete sisselugemine"],
-          handsOnProject: "Puhasta ja analüüsi reaalset klienditoe piletite dataseti ning tuvasta peamised pudelikaelad.",
-          recommendedPlatforms: ["FreeCodeCamp", "Kaggle Learn", "Udemy"]
-        }
-      },
-      {
-        order: 4,
-        title: "Rakenduslik statistika ja hüpoteeside testimine",
-        why: "Aitab eristada juhuslikku kõikumist reaalsetest äritrendidest ja teha andmetel põhinevaid usaldusväärseid soovitusi.",
-        estimatedEffort: "~2 nädalat (3 h/nädal)",
-        suggestedResource: "Khan Academy: Statistics and Probability & Crash Course",
-        relatedSkill: "Statistika",
-        completed: false,
-        priority: "medium",
-        resourceType: "reading",
-        details: {
-          overview: "Mõista keskväärtust, mediaani, standardhälvet, korrelatsiooni ja A/B testimise põhimõtteid.",
-          keyLearningPoints: ["Normaaljaotus ja usaldusvahemikud (Confidence intervals)", "A/B testimise p-väärtus ja valimi suuruse arvutamine", "Korrelatsiooni ja põhjuslikkuse eristamine"],
-          handsOnProject: "Hinda veebilehe maandumislehe A/B testi tulemusi ja koosta juhtkonnale otsustusettepanek.",
-          recommendedPlatforms: ["Khan Academy", "Coursera", "Towards Data Science"]
-        }
-      },
-      {
-        order: 5,
-        title: "Portfoolio ehitamine ja GitHubi esitlus",
-        why: "Praktiline portfoolio tõestab tulevasele tööandjale, et suudad lahendada reaalseid äriprobleeme algusest lõpuni.",
-        estimatedEffort: "~2 nädalat (5 h/nädal)",
-        suggestedResource: "Praktiline GitHubi projekt + LinkedIn artikli vormistus",
-        relatedSkill: "Portfoolio",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Pane kokku 2 terviklikku analüüsiprojekti: üks SQL/Power BI baasil ja teine Pythoni andmepuhastuse kohta.",
-          keyLearningPoints: ["Selge ja professionaalne README.md vormistamine", "Tulemuste esitlus mittetehnilisele auditooriumile", "Projekti lisamine CV-sse ja LinkedIni profiilile"],
-          handsOnProject: "Avalda avalik GitHubi repo koos selgitavate diagrammide ja ärijäreldustega.",
-          recommendedPlatforms: ["GitHub", "Kaggle", "Medium"]
-        }
-      }
-    ] : [
-      {
-        order: 1,
-        title: "Intermediate to Advanced SQL for Analytics",
-        why: "Since you already know basic queries, mastering window functions and CTEs is your highest-leverage next step.",
-        estimatedEffort: "~2 weeks (5 hrs/week)",
-        suggestedResource: "Mode Analytics SQL Tutorial & DataCamp SQL for Business Analysts",
-        relatedSkill: "Advanced SQL",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Write complex analytical SQL queries to filter, aggregate, and discover retention patterns in large tables.",
-          keyLearningPoints: ["Window functions: ROW_NUMBER, RANK, LAG/LEAD", "Common Table Expressions (WITH clauses)", "Query optimization"],
-          handsOnProject: "Query an e-commerce schema to calculate monthly customer cohort retention.",
-          recommendedPlatforms: ["DataCamp", "Mode Analytics", "LeetCode"]
-        }
-      },
-      {
-        order: 2,
-        title: "Interactive Dashboards in Power BI or Tableau",
-        why: "Business stakeholders demand visual narratives. Building clear dashboards makes your insights directly actionable.",
-        estimatedEffort: "~3 weeks (4 hrs/week)",
-        suggestedResource: "Coursera: Microsoft Power BI Data Analyst Certificate",
-        relatedSkill: "Power BI / Tableau",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Model schemas, write DAX calculations, and craft executive-level dashboards.",
-          keyLearningPoints: ["DAX measures (CALCULATE, SUMX)", "Star schema data modeling", "Visual hierarchy & UX for reports"],
-          handsOnProject: "Build an executive sales & CSAT monitoring dashboard with drill-down filters.",
-          recommendedPlatforms: ["Coursera", "Microsoft Learn"]
-        }
-      },
-      {
-        order: 3,
-        title: "Python for Data Analysis (Pandas & Seaborn)",
-        why: "Python unlocks automated ETL, handling unstructured datasets, and machine learning prep beyond spreadsheet limits.",
-        estimatedEffort: "~4 weeks (5 hrs/week)",
-        suggestedResource: "FreeCodeCamp: Data Analysis with Python Certification",
-        relatedSkill: "Python (Pandas)",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Use Jupyter notebooks to clean raw datasets, impute missing values, and generate exploratory visuals.",
-          keyLearningPoints: ["Pandas DataFrames and reshaping", "Seaborn visual exploratory analysis", "Handling datetime & text data"],
-          handsOnProject: "Analyze real customer support ticket logs to discover root causes of customer churn.",
-          recommendedPlatforms: ["FreeCodeCamp", "Kaggle", "Udemy"]
-        }
-      },
-      {
-        order: 4,
-        title: "Practical Business Statistics & A/B Testing",
-        why: "Ensures you differentiate genuine business lift from random noise when making strategic recommendations.",
-        estimatedEffort: "~2 weeks (3 hrs/week)",
-        suggestedResource: "Khan Academy: Statistics & Probability for Data Science",
-        relatedSkill: "Applied Statistics",
-        completed: false,
-        priority: "medium",
-        resourceType: "reading",
-        details: {
-          overview: "Grasp distributions, confidence intervals, p-values, and statistical power in product tests.",
-          keyLearningPoints: ["Confidence intervals & hypothesis testing", "A/B test sample size calculation", "Correlation vs causation"],
-          handsOnProject: "Run an evaluation on marketing landing page A/B test results and write an executive briefing.",
-          recommendedPlatforms: ["Khan Academy", "Coursera"]
-        }
-      },
-      {
-        order: 5,
-        title: "Portfolio Project & Public Presentation",
-        why: "A tangible public portfolio proves to hiring managers that you can solve real-world problems from start to finish.",
-        estimatedEffort: "~2 weeks (5 hrs/week)",
-        suggestedResource: "GitHub Showcase & LinkedIn Case Study",
-        relatedSkill: "Portfolio & Presentation",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Package 2 comprehensive case studies showcasing SQL extraction, Python cleaning, and a Power BI dashboard.",
-          keyLearningPoints: ["Writing an engaging README with business impact", "Explaining methodology clearly", "Publishing interactive dashboard links"],
-          handsOnProject: "Publish a GitHub repository with annotated code and a slide deck summary.",
-          recommendedPlatforms: ["GitHub", "Kaggle", "LinkedIn"]
-        }
-      }
-    ];
-
-    return {
-      id: 'analysis-' + Date.now(),
-      profileId: 'profile-data',
-      goalId: 'data-analyst',
-      goalTitle: isEstonian ? "Andmeanalüütik" : "Data Analyst",
-      readinessScore: 62,
-      alreadyHave,
-      stillNeed,
-      path,
-      createdAt: new Date().toISOString(),
-      categoryBreakdown: {
-        technical: 65,
-        soft: 85,
-        languages: 75
-      },
-      summaryNote: isEstonian
-        ? "Sul on suurepärane baas SQL-is ja Excelis ning tugev suhtlemisoskus. 3-4 sihipärast sammu viivad sind sihile!"
-        : "You have a solid foundation in SQL & Excel plus strong domain empathy. 3-4 targeted steps will get you job-ready!",
-      encouragingHeadline: isEstonian ? "Oled 3 sammu kaugusel valmisolekust!" : "You're 3 steps from ready!"
-    };
-  }
-
-  // Profile 3: Frontend Developer / Veebiarendaja
-  if (normalizedGoal.includes('frontend') || normalizedGoal.includes('veebiarendaja') || normalizedGoal.includes('developer') || normalizedGoal.includes('react')) {
-    const hasHtml = normalizedInput.includes('html') || normalizedInput.includes('css');
-    const hasJs = normalizedInput.includes('javascript') || normalizedInput.includes('js');
-
-    const alreadyHave: Skill[] = isEstonian ? [
-      ...(hasHtml ? [{ name: "HTML5 ja Semantiline veeb", level: "intermediate" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      { name: "CSS3 (Flexbox, Grid, Responsive Design)", level: "intermediate", source: "ai_extracted", category: "technical" },
-      ...(hasJs ? [{ name: "JavaScript baasteadmised (DOM, fetch)", level: "beginner" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      { name: "Git ja versioonihaldus", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "Figma kavandite mõistmine", level: "intermediate", source: "ai_extracted", category: "tool" },
-    ] : [
-      ...(hasHtml ? [{ name: "Semantic HTML5", level: "intermediate" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      { name: "Modern Responsive CSS (Flexbox & Grid)", level: "intermediate", source: "ai_extracted", category: "technical" },
-      ...(hasJs ? [{ name: "JavaScript Fundamentals (DOM, Fetch API)", level: "beginner" as const, source: "ai_extracted" as const, category: "technical" as const }] : []),
-      { name: "Git & GitHub Version Control", level: "beginner", source: "ai_extracted", category: "tool" },
-      { name: "Figma Design Interpretation", level: "intermediate", source: "ai_extracted", category: "tool" },
-    ];
-
-    const stillNeed: Skill[] = isEstonian ? [
-      { name: "React 18/19 ja komponendiarhitektuur", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "TypeScript staatiline tüüpimine", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Globaalne olekuhaldus (Zustand / Redux)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Tailwind CSS ja stiilisüsteemid", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "REST ja GraphQL API integratsioonid", level: "beginner", source: "ai_extracted", category: "technical" },
-    ] : [
-      { name: "React Component Architecture & Hooks", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "TypeScript for Modern Web Apps", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "State Management (Zustand / TanStack Query)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "Utility-First CSS (Tailwind CSS)", level: "beginner", source: "ai_extracted", category: "technical" },
-      { name: "API Integration & Async Error Handling", level: "beginner", source: "ai_extracted", category: "technical" },
-    ];
-
-    const path: PathStep[] = isEstonian ? [
-      {
-        order: 1,
-        title: "Kaasaegne JavaScript (ES6+) ja asünkroonsus",
-        why: "Enne Reacti süvenemist on hädavajalik tunda noolefunktsioone, destruktureerimist, Promises ja async/await mehhanisme.",
-        estimatedEffort: "~2 nädalat (6 h/nädal)",
-        suggestedResource: "JavaScript.info & FreeCodeCamp JavaScript Algoritmid",
-        relatedSkill: "JavaScript ES6+",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Süvenda JavaScripti arusaama: closures, prototüübid, event loop ning array meetodid (map, filter, reduce).",
-          keyLearningPoints: ["Async/await ja veahaldus", "Massiivide ja objektide immutaabelne töötlemine", "Moodulid (ES Modules)"],
-          handsOnProject: "Loo ilma väliste raamistiketa interaktiivne ilmaennustuse veebirakendus API päringutega.",
-          recommendedPlatforms: ["JavaScript.info", "MDN Web Docs"]
-        }
-      },
-      {
-        order: 2,
-        title: "Reacti alused ja kohandatud konksud (Hooks)",
-        why: "React on maailma enimnõutud veebiraamistik. Õpi ehitama taaskasutatavaid komponente ja juhtima olekut.",
-        estimatedEffort: "~3 nädalat (6 h/nädal)",
-        suggestedResource: "React.dev ametlik interaktiivne õpetus + Scrimba React Course",
-        relatedSkill: "React.js",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Komponentide elutsükkel, useState, useEffect, useMemo ning propside edastamine.",
-          keyLearningPoints: ["Virtuaalne DOM ja renderdamise optimeerimine", "Vormide haldamine ja kontrollitud komponendid", "Kohandatud hookide (custom hooks) loomine"],
-          handsOnProject: "Ehita interaktiivne e-poe ostukorv koos toodete filtreerimise ja kohaliku salvestusega.",
-          recommendedPlatforms: ["React.dev", "Scrimba", "FreeCodeCamp"]
-        }
-      },
-      {
-        order: 3,
-        title: "TypeScript Reacti projektides",
-        why: "Peaaegu kõik professionaalsed tiimid nõuavad TypeScripti, et vältida vigu ja tagada koodibaasi skaleeritavus.",
-        estimatedEffort: "~2 nädalat (5 h/nädal)",
-        suggestedResource: "Total TypeScript (Matt Pocock) & TypeScript Handbook",
-        relatedSkill: "TypeScript",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Õpi tüüpima Reacti komponente, propse, sündmusi ja API vastuseid.",
-          keyLearningPoints: ["Liidesed (Interfaces) ja tüübid (Types)", "Generics funktsioonides ja komponentides", "React.FC vs otsene funktsioonide tüüpimine"],
-          handsOnProject: "Migreeri oma Reacti ostukorvi rakendus puhtale TypeScriptile ilma 'any' tüübita.",
-          recommendedPlatforms: ["Total TypeScript", "Frontend Masters"]
-        }
-      },
-      {
-        order: 4,
-        title: "Tailwind CSS ja kaasaegne kasutajaliides",
-        why: "Võimaldab ehitada kiiresti pikslitäpseid ja reageerivaid kasutajaliideseid ilma mahukaid CSS faile kirjutamata.",
-        estimatedEffort: "~1 nädal (4 h)",
-        suggestedResource: "Tailwind CSS ametlik dokumentatsioon ja YouTube projektid",
-        relatedSkill: "Tailwind CSS",
-        completed: false,
-        priority: "medium",
-        resourceType: "reading",
-        details: {
-          overview: "Utility-first filosoofia, dark mode tugi, animatsioonid ja komponentide korduvkasutatavus.",
-          keyLearningPoints: ["Reageerivad klassid (sm, md, lg, xl)", "Dark mode klasside lisamine", "Custom värvipalettide seadistamine"],
-          handsOnProject: "Kujunda responsiivne SaaS maandumisleht koos animatsioonidega.",
-          recommendedPlatforms: ["TailwindCSS.com", "YouTube"]
-        }
-      },
-      {
-        order: 5,
-        title: "Täismahus Fullstack/API projekt ja deploy",
-        why: "Tööintervjuudel on parim trump elus veebilink toimivale rakendusele, mis suhtleb reaalse serveriga.",
-        estimatedEffort: "~2 nädalat (6 h/nädal)",
-        suggestedResource: "Vercel / Netlify tasuta pilvemajutus + GitHub Actions",
-        relatedSkill: "Deploy & CI/CD",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Ühenda rakendus avaliku API-ga (nt Supabase või REST API) ja paigalda see pilve.",
-          keyLearningPoints: ["Keskkonnamuutujate (ENV) haldamine", "Vercel / Netlify automaatne deploy GitHubist", "Veebijõudluse (Lighthouse) optimeerimine"],
-          handsOnProject: "Loo ja paigalda avalik veebirakendus ning lisa link oma LinkedIni profiilile.",
-          recommendedPlatforms: ["Vercel", "GitHub"]
-        }
-      }
-    ] : [
-      {
-        order: 1,
-        title: "Modern JavaScript (ES6+) Deep Dive",
-        why: "Before mastering React, deep comfort with destructuring, arrow functions, promises, and async/await is vital.",
-        estimatedEffort: "~2 weeks (6 hrs/week)",
-        suggestedResource: "JavaScript.info & MDN Web Docs",
-        relatedSkill: "Modern JavaScript",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Master closures, array iterators (map, filter, reduce), async fetching, and module bundling.",
-          keyLearningPoints: ["Promises & Async/Await", "Immutable array operations", "DOM event loop mechanics"],
-          handsOnProject: "Build an interactive weather web app with real-time API queries.",
-          recommendedPlatforms: ["JavaScript.info", "MDN"]
-        }
-      },
-      {
-        order: 2,
-        title: "React Fundamentals & Custom Hooks",
-        why: "React is the standard across the tech industry. Learn component architecture, state lifting, and hooks.",
-        estimatedEffort: "~3 weeks (6 hrs/week)",
-        suggestedResource: "React.dev Official Interactive Guide & Scrimba",
-        relatedSkill: "React.js",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Component hierarchy, useState, useEffect, controlled inputs, and custom hooks.",
-          keyLearningPoints: ["Virtual DOM rendering rules", "Controlled forms & validation", "Custom reusable hooks"],
-          handsOnProject: "Build a responsive e-commerce checkout interface with local persistence.",
-          recommendedPlatforms: ["React.dev", "Scrimba"]
-        }
-      },
-      {
-        order: 3,
-        title: "TypeScript for React Engineers",
-        why: "Modern production engineering teams mandate TypeScript for type safety, self-documenting code, and zero runtime surprises.",
-        estimatedEffort: "~2 weeks (5 hrs/week)",
-        suggestedResource: "Total TypeScript & TypeScript Handbook",
-        relatedSkill: "TypeScript",
-        completed: false,
-        priority: "high",
-        resourceType: "course",
-        details: {
-          overview: "Typing React components, event listeners, generic functions, and API payload schemas.",
-          keyLearningPoints: ["Interfaces vs Type aliases", "Generics in data fetching", "Strict null checks"],
-          handsOnProject: "Refactor your React project to 100% strict TypeScript with zero 'any' escapes.",
-          recommendedPlatforms: ["Total TypeScript", "Frontend Masters"]
-        }
-      },
-      {
-        order: 4,
-        title: "Tailwind CSS & Design Systems",
-        why: "Accelerates building polished, accessible responsive layouts directly in JSX.",
-        estimatedEffort: "~1 week (4 hrs)",
-        suggestedResource: "Tailwind CSS Documentation & UI Component Guides",
-        relatedSkill: "Tailwind CSS",
-        completed: false,
-        priority: "medium",
-        resourceType: "reading",
-        details: {
-          overview: "Mobile-first responsive modifiers, dark mode tokens, and composing reusable UI atoms.",
-          keyLearningPoints: ["Responsive breakpoint utilities", "Theme configuration & dark mode", "Accessible focus states"],
-          handsOnProject: "Design a high-converting landing page with subtle animations.",
-          recommendedPlatforms: ["TailwindCSS.com"]
-        }
-      },
-      {
-        order: 5,
-        title: "End-to-End Deployment & Portfolio Showcase",
-        why: "A live, lightning-fast web app in your GitHub and resume demonstrates execution capability to recruiters.",
-        estimatedEffort: "~2 weeks (6 hrs/week)",
-        suggestedResource: "Vercel / Netlify Deployment & GitHub Actions",
-        relatedSkill: "Production Deployment",
-        completed: false,
-        priority: "medium",
-        resourceType: "project",
-        details: {
-          overview: "Connect to live REST/GraphQL APIs, manage environment secrets, and achieve 95+ Lighthouse scores.",
-          keyLearningPoints: ["Environment variables & build caching", "Automated git CI/CD deployment", "Lighthouse optimization"],
-          handsOnProject: "Deploy a live production portfolio piece with custom domain or Vercel link.",
-          recommendedPlatforms: ["Vercel", "GitHub"]
-        }
-      }
-    ];
-
-    return {
-      id: 'analysis-' + Date.now(),
-      profileId: 'profile-fe',
-      goalId: 'frontend-developer',
-      goalTitle: isEstonian ? "Veebiarendaja (Frontend)" : "Frontend Developer",
-      readinessScore: 58,
-      alreadyHave,
-      stillNeed,
-      path,
-      createdAt: new Date().toISOString(),
-      categoryBreakdown: {
-        technical: 60,
-        soft: 75,
-        languages: 70
-      },
-      summaryNote: isEstonian
-        ? "Sul on hea HTML/CSS ja koodialuste põhi. Reacti ja TypeScripti omandamisega avanevad suurepärased töövõimalused."
-        : "You have a clean foundation in markup and code basics. Mastering React & TypeScript will make you hireable.",
-      encouragingHeadline: isEstonian ? "Oled 4 sammu kaugusel valmisolekust!" : "You're 4 steps from ready!"
-    };
-  }
-
-  // Generic Dynamic Heuristic Fallback for ANY custom goal or custom input!
-  // Extracts actual words and skills from rawInput, computes match against target goal
-  const words = rawInput.split(/\s+/).filter(w => w.length > 2);
-  const potentialSkills = [
-    "Communication", "Problem Solving", "Teamwork", "Customer Service", "Project Coordination",
-    "Documentation", "Critical Thinking", "Research", "Analysis", "Presentation",
-    "Digital Tools", "Task Management", "Fast Learner"
-  ];
-  const detectedSkills = potentialSkills.filter(s => 
-    normalizedInput.includes(s.toLowerCase()) || Math.random() > 0.6
-  ).slice(0, 4);
-
-  if (detectedSkills.length === 0) {
-    detectedSkills.push(
-      isEstonian ? "Analüütiline mõtlemine" : "Analytical Thinking",
-      isEstonian ? "Eesmärgile pühendumine" : "Goal Dedication",
-      isEstonian ? "Kiire õppimisvõime" : "Fast Learning Ability"
-    );
-  }
-
-  const alreadyHave: Skill[] = detectedSkills.map(name => ({
-    name,
-    level: "intermediate",
-    source: "ai_extracted",
-    category: "soft"
-  }));
-
-  const goalWords = goalTitle.split(' ').filter(Boolean);
-  const coreGoalTerm = goalWords[0] || goalTitle;
-
-  const stillNeed: Skill[] = isEstonian ? [
-    { name: `${goalTitle} alused ja metoodikad`, level: "beginner", source: "ai_extracted", category: "technical" },
-    { name: `Erialased digitööriistad ja platvormid`, level: "beginner", source: "ai_extracted", category: "tool" },
-    { name: `Valdkonna parimad praktikad ja standardid`, level: "beginner", source: "ai_extracted", category: "technical" },
-    { name: `Praktiline projektikogemus ja portfoolio`, level: "beginner", source: "ai_extracted", category: "technical" },
-  ] : [
-    { name: `Core Principles of ${goalTitle}`, level: "beginner", source: "ai_extracted", category: "technical" },
-    { name: `Industry Tooling & Frameworks`, level: "beginner", source: "ai_extracted", category: "tool" },
-    { name: `Best Practices & Professional Standards`, level: "beginner", source: "ai_extracted", category: "technical" },
-    { name: `Applied Milestone Projects & Portfolio`, level: "beginner", source: "ai_extracted", category: "technical" },
-  ];
-
-  const path: PathStep[] = isEstonian ? [
-    {
-      order: 1,
-      title: `${goalTitle} teoreetilised alused ja põhikontseptsioonid`,
-      why: "Tugev vundament võimaldab sul kiiresti orienteeruda valdkonna spetsiifilises terminoloogias ja loogikas.",
-      estimatedEffort: "~2-3 nädalat (4 h/nädal)",
-      suggestedResource: "Veebikursus (Coursera / edX) või valdkondlik käsiraamat",
-      relatedSkill: `${coreGoalTerm} alused`,
-      completed: false,
-      priority: "high",
-      resourceType: "course",
-      details: {
-        overview: "Omanda rolli baasmõisted, töömeetodid ja levinumad probleemid, mida igapäevaselt lahendatakse.",
-        keyLearningPoints: ["Valdkonna põhimõisted ja struktuur", "Tüüpiline tööprotsess ja etapid", "Erialane sõnavara"],
-        handsOnProject: "Tee kokkuvõtlik mõttekaart (mindmap) valdkonna peamistest komponentidest.",
-        recommendedPlatforms: ["Coursera", "edX", "Medium"]
-      }
-    },
-    {
-      order: 2,
-      title: "Praktiliste tööriistade ja tarkvara omandamine",
-      why: "Tööandjad hindavad kandidaate, kes suudavad kohe asuda kasutama valdkonna standardtarkvara.",
-      estimatedEffort: "~3 nädalat (5 h/nädal)",
-      suggestedResource: "Interaktiivsed õpetused ja tarkvara ametlikud sertifitseerimismaterjalid",
-      relatedSkill: "Digitööriistad",
-      completed: false,
-      priority: "high",
-      resourceType: "tool",
-      details: {
-        overview: "Õpi tundma ja seadistama peamisi tarkvarasüsteeme ja töövooge.",
-        keyLearningPoints: ["Tööriistade põhifunktsioonid", "Otseteed ja produktiivsusnipid", "Tiimikoostöö võimalused"],
-        handsOnProject: "Seadista oma testkonto ja tee läbi esimene näidisülesanne algusest lõpuni.",
-        recommendedPlatforms: ["YouTube", "LinkedIn Learning", "Tarkvara ametlikud juhendid"]
-      }
-    },
-    {
-      order: 3,
-      title: "Praktiline proovitöö ja portfoolio koostamine",
-      why: "Tõesta oma uusi oskusi reaalsete tulemustega. Portfoolio räägib kõvemini kui ükski CV rida.",
-      estimatedEffort: "~2-4 nädalat (6 h/nädal)",
-      suggestedResource: "Hands-on iseseisev projekt ja tulemuste vormistamine",
-      relatedSkill: "Portfoolio",
-      completed: false,
-      priority: "medium",
-      resourceType: "project",
-      details: {
-        overview: "Loo reaalne näidisprojekt, mis lahendab konkreetset probleemi antud valdkonnas.",
-        keyLearningPoints: ["Probleemi püstitus ja lahendusmeetod", "Tulemuste dokumenteerimine", "Tagasiside küsimine mentorilt või kogukonnalt"],
-        handsOnProject: "Vormista lõplik töö ja avalda see vaatamiseks või allalaadimiseks.",
-        recommendedPlatforms: ["GitHub", "Behance", "LinkedIn"]
-      }
-    },
-    {
-      order: 4,
-      title: "CV ja LinkedIni uuendamine uue rolli jaoks",
-      why: "Aitab sinu uutel oskustel silma paista värbajatele ja valdkonna juhtidele.",
-      estimatedEffort: "~1 nädal",
-      suggestedResource: "CV lihvimine ja erialaste kontaktide loomine",
-      relatedSkill: "Karjääri esitlus",
-      completed: false,
-      priority: "medium",
-      resourceType: "reading",
-      details: {
-        overview: "Tõsta esile omandatud oskused ja projektid ning sea end valmis tööintervjuudeks.",
-        keyLearningPoints: ["Märksõnade optimeerimine", "Intervjuu vastuste harjutamine", "Erialastes aruteludes osalemine"],
-        handsOnProject: "Vii oma CV ja LinkedIni profiil vastavusse Õpilausuja teekonna tulemustega.",
-        recommendedPlatforms: ["LinkedIn", "Töötukassa karjäärinõustamine"]
-      }
+  for (const role of ROLE_KNOWLEDGE_BASE) {
+    if (role.goalMatch.some((m) => normalizedGoal.includes(m))) {
+      return role.requiredSkills;
     }
-  ] : [
+  }
+
+  // Dynamic synthesizer for ANY custom goal!
+  const goalWords = goalTitle.split(/\s+/).filter(Boolean);
+  const mainTerm = goalWords.join(' ');
+
+  return [
     {
-      order: 1,
-      title: `Core Foundations of ${goalTitle}`,
-      why: "A grounded theoretical foundation lets you quickly speak the specialized language of the domain.",
-      estimatedEffort: "~2-3 weeks (4 hrs/week)",
-      suggestedResource: "Online Foundation Course (Coursera / edX) or Industry Handbook",
-      relatedSkill: `${coreGoalTerm} Basics`,
-      completed: false,
-      priority: "high",
-      resourceType: "course",
-      details: {
-        overview: "Master fundamental concepts, standard workflows, and typical challenges solved in this role.",
-        keyLearningPoints: ["Core terminology and ecosystem", "Standard project life-cycle", "Quality heuristics"],
-        handsOnProject: "Create a structured concept map detailing the role's primary operating pillars.",
-        recommendedPlatforms: ["Coursera", "edX"]
-      }
+      skillName: `${mainTerm} põhimõisted ja valdkonna raamistik`,
+      skillNameEn: `Core Principles of ${mainTerm}`,
+      category: "technical" as const,
+      why: `Tugev baas võimaldab sul kiiresti orienteeruda ${mainTerm} igapäevastes nõudmistes ja terminoloogias.`,
+      whyEn: `A solid foundation helps you navigate daily tasks and terminology of ${mainTerm}.`,
+      effort: "~2–3 nädalat (4 h nädalas)",
+      resource: "Erialane veebikursus (Coursera / edX) või valdkondlik käsiraamat",
+      resourceEn: "Online Course (Coursera / edX) or Industry Handbook",
+      handsOn: `Koosta kokkuvõtlik mõttekaart ${mainTerm} peamistest tööülesannetest ja protsessidest.`,
+      platforms: ["Coursera", "edX", "Udemy"]
     },
     {
-      order: 2,
-      title: "Mastering Domain-Specific Tools & Software",
-      why: "Hiring managers look for candidates who can operate industry-standard software from day one.",
-      estimatedEffort: "~3 weeks (5 hrs/week)",
-      suggestedResource: "Hands-on tool tutorials & vendor certification paths",
-      relatedSkill: "Specialized Tooling",
-      completed: false,
-      priority: "high",
-      resourceType: "tool",
-      details: {
-        overview: "Get hands-on with the primary toolchain, shortcuts, and collaboration environments.",
-        keyLearningPoints: ["Tool configuration & workflows", "Productivity best practices", "Team sync capabilities"],
-        handsOnProject: "Build a functioning proof-of-concept using the standard software stack.",
-        recommendedPlatforms: ["LinkedIn Learning", "YouTube", "Official Documentation"]
-      }
+      skillName: "Valdkondlikud digitaalsed tööriistad ja tarkvara",
+      skillNameEn: "Industry Standard Digital Tools & Software",
+      category: "tool" as const,
+      why: "Tööandjad eeldavad oskust kasutada erialast standardtarkvara ja töövooge.",
+      whyEn: "Employers expect hands-on proficiency with standard software and operational workflows.",
+      effort: "~2 nädalat (4 h nädalas)",
+      resource: "Tarkvara ametlikud õppematerjalid ja praktilised videoõpetused",
+      resourceEn: "Official Documentation & Video Walkthroughs",
+      handsOn: "Tee läbi näidisülesanne valdkonna tarkvaras algusest lõpuni.",
+      platforms: ["YouTube", "LinkedIn Learning", "Tarkvara ametlik leht"]
     },
     {
-      order: 3,
-      title: "End-to-End Milestone Project & Portfolio Piece",
-      why: "Evidence speaks louder than buzzwords. A portfolio project gives interviewers tangible proof of your skill.",
-      estimatedEffort: "~2-4 weeks (6 hrs/week)",
-      suggestedResource: "Independent Capstone Project with public documentation",
-      relatedSkill: "Applied Execution",
-      completed: false,
-      priority: "medium",
-      resourceType: "project",
-      details: {
-        overview: "Execute a self-directed case study tackling an authentic problem in this domain.",
-        keyLearningPoints: ["Problem framing and scope", "Execution methodology", "Communicating business outcomes"],
-        handsOnProject: "Publish a polished case study with visuals and outcome metrics.",
-        recommendedPlatforms: ["GitHub", "LinkedIn", "Personal Blog"]
-      }
+      skillName: "Protsesside juhtimine ja tulemuste mõõtmine",
+      skillNameEn: "Process Management & KPI Tracking",
+      category: "technical" as const,
+      why: "Võime planeerida aega, hallata prioriteete ja jälgida tulemusi eristab tugevat spetsialisti.",
+      whyEn: "Ability to manage timelines, prioritize tasks, and track outcomes drives long-term success.",
+      effort: "~2 nädalat (3 h nädalas)",
+      resource: "Erialane juhtimisjuhend ja praktilised mallid",
+      resourceEn: "Practical Operations & Execution Guide",
+      handsOn: "Koosta tegevusplaan ja kontroll-leht tüüpilise tööprotsessi tõhusaks läbiviimiseks.",
+      platforms: ["Coursera", "Medium", "Harvard Business Review"]
     },
     {
-      order: 4,
-      title: "Career Positioning & Target Outreach",
-      why: "Aligns your resume, online presence, and narrative with the expectations of hiring managers.",
-      estimatedEffort: "~1 week",
-      suggestedResource: "Resume refactoring & mock interview practice",
-      relatedSkill: "Career Presentation",
-      completed: false,
-      priority: "medium",
-      resourceType: "reading",
-      details: {
-        overview: "Highlight your newly acquired capabilities, project achievements, and transferable strengths.",
-        keyLearningPoints: ["Keyword optimization for applicant tracking", "Storytelling around your career shift", "Networking with practitioners"],
-        handsOnProject: "Update your CV and LinkedIn headline to reflect your verified Õpilausuja roadmap.",
-        recommendedPlatforms: ["LinkedIn", "Career Hubs"]
-      }
+      skillName: "Praktiline proovitöö ja portfoolio koostamine",
+      skillNameEn: "Portfolio Project & Applied Case Study",
+      category: "technical" as const,
+      why: "Tõesta oma uusi oskusi konkreetse tulemusega. Valmis näidistöö veenab tööandjat kõige paremini.",
+      whyEn: "Prove your new skills with a real showcase piece. Portfolios speak louder than resumes.",
+      effort: "~3 nädalat (5 h nädalas)",
+      resource: "Iseseisev praktiline case study ja tulemuste vormistamine",
+      resourceEn: "Independent Case Study & Presentation Deck",
+      handsOn: `Lahenda terviklik näidisülesanne rolli ${mainTerm} vaatenurgast ja vormista tulemused.`,
+      platforms: ["GitHub", "Behance", "LinkedIn"]
     }
   ];
+}
+
+// -------------------------------------------------------------
+// High-Fidelity Intelligent Offline Analysis Generator
+// -------------------------------------------------------------
+export function generateIntelligentAnalysis(
+  rawInput: string,
+  goalTitle: string,
+  lang: 'en' | 'et' = 'et'
+): GapAnalysis {
+  const isEstonian = lang === 'et';
+  
+  // 1. Extract actual skills from user's input
+  const userSkills = extractUserSkills(rawInput, isEstonian);
+
+  // 2. Retrieve structured requirements for the goal
+  const roleReqs = getTargetRoleRequirements(goalTitle, isEstonian);
+
+  // 3. Match user skills against role requirements
+  const alreadyHaveMap = new Map<string, Skill>();
+  const stillNeedMap = new Map<string, Skill>();
+  const pathSteps: PathStep[] = [];
+
+  let matchedReqCount = 0;
+
+  roleReqs.forEach((req) => {
+    // Check if user has this skill (direct or keyword overlap)
+    const isMatched = userSkills.some((us) => {
+      const uName = us.name.toLowerCase();
+      const rName = req.skillName.toLowerCase();
+      const rNameEn = req.skillNameEn.toLowerCase();
+
+      return (
+        uName.includes(rName) ||
+        rName.includes(uName) ||
+        uName.includes(rNameEn) ||
+        rNameEn.includes(uName) ||
+        // Check partial word stems
+        (uName.includes('scrum') && rName.includes('scrum')) ||
+        (uName.includes('agile') && rName.includes('agile')) ||
+        (uName.includes('jira') && rName.includes('jira')) ||
+        (uName.includes('sql') && rName.includes('sql')) ||
+        (uName.includes('excel') && rName.includes('excel')) ||
+        (uName.includes('figma') && rName.includes('figma')) ||
+        (uName.includes('html') && rName.includes('html')) ||
+        (uName.includes('javascript') && rName.includes('javascript')) ||
+        (uName.includes('react') && rName.includes('react')) ||
+        (uName.includes('inglise') && rName.includes('inglise'))
+      );
+    });
+
+    if (isMatched) {
+      matchedReqCount++;
+      alreadyHaveMap.set(req.skillName, {
+        name: isEstonian ? req.skillName : req.skillNameEn,
+        level: 'intermediate',
+        source: 'ai_extracted',
+        category: req.category
+      });
+    } else {
+      stillNeedMap.set(req.skillName, {
+        name: isEstonian ? req.skillName : req.skillNameEn,
+        level: 'beginner',
+        source: 'ai_extracted',
+        category: req.category
+      });
+
+      // Add to sequenced learning path
+      pathSteps.push({
+        order: pathSteps.length + 1,
+        title: isEstonian ? req.skillName : req.skillNameEn,
+        why: isEstonian ? req.why : req.whyEn,
+        estimatedEffort: req.effort,
+        suggestedResource: isEstonian ? req.resource : req.resourceEn,
+        relatedSkill: isEstonian ? req.skillName : req.skillNameEn,
+        completed: false,
+        priority: pathSteps.length < 2 ? 'high' : 'medium',
+        resourceType: 'course',
+        details: {
+          overview: isEstonian ? req.why : req.whyEn,
+          keyLearningPoints: isEstonian ? [
+            `Teooria ja peamised printsiibid`,
+            `Igapäevane praktiline rakendamine rollis ${goalTitle}`,
+            `Levinud vead ja nende ennetamine`
+          ] : [
+            `Core theoretical principles`,
+            `Practical everyday application in ${goalTitle}`,
+            `Best industry workflows & avoiding pitfalls`
+          ],
+          handsOnProject: req.handsOn,
+          recommendedPlatforms: req.platforms
+        }
+      });
+    }
+  });
+
+  // Also include remaining user skills as transferable strengths in alreadyHave!
+  userSkills.forEach((us) => {
+    if (!alreadyHaveMap.has(us.name) && !stillNeedMap.has(us.name)) {
+      alreadyHaveMap.set(us.name, us);
+    }
+  });
+
+  // 4. Calculate dynamic match score
+  const totalReqCount = roleReqs.length;
+  const baseReqRatio = totalReqCount > 0 ? (matchedReqCount / totalReqCount) : 0;
+  const transferableBonus = Math.min(25, (userSkills.length - matchedReqCount) * 5);
+  
+  // Natural realistic readiness score between 20% and 92%
+  let calculatedScore = Math.round(baseReqRatio * 65 + transferableBonus + 15);
+  calculatedScore = Math.max(20, Math.min(92, calculatedScore));
+
+  const alreadyHave = Array.from(alreadyHaveMap.values());
+  const stillNeed = Array.from(stillNeedMap.values());
+
+  // 5. Generate human, empathetic summary
+  let summaryNote = "";
+  let encouragingHeadline = "";
+
+  const haveNames = alreadyHave.slice(0, 3).map(s => s.name).join(', ');
+  const needNames = stillNeed.slice(0, 2).map(s => s.name).join(', ');
+
+  if (isEstonian) {
+    if (calculatedScore >= 70) {
+      encouragingHeadline = "Suurepärane stardipositsioon uueks rolliks!";
+      summaryNote = `Sul on juba väga hea vundament (${haveNames}). Sihtrolli (${goalTitle}) saavutamiseks vajad peamiselt viimistlust teemadel: ${needNames}.`;
+    } else if (calculatedScore >= 45) {
+      encouragingHeadline = "Hea baas ja tugevad ülekantavad oskused!";
+      summaryNote = `Sinu senine kogemus annab sulle väärtusliku pagasi (${haveNames}). Rolli (${goalTitle}) edukaks täitmiseks tasub sihipäraselt omandada: ${needNames}.`;
+    } else {
+      encouragingHeadline = "Selge ja samm-sammuline teekond eesmärgini!";
+      summaryNote = `Uuele ametikohale (${goalTitle}) liikumine nõuab uusi oskusi. Teekond on üles ehitatud nii, et alustad baasist (${needNames}) ja liigud praktiliste projektideni.`;
+    }
+  } else {
+    if (calculatedScore >= 70) {
+      encouragingHeadline = "Outstanding starting position for this role!";
+      summaryNote = `You already bring strong foundations (${haveNames}). Bridging into ${goalTitle} will mainly require fine-tuning: ${needNames}.`;
+    } else {
+      encouragingHeadline = "Strong transferable strengths ready to build upon!";
+      summaryNote = `Your existing background provides great transferable strengths (${haveNames}). To step into ${goalTitle}, focus on acquiring: ${needNames}.`;
+    }
+  }
 
   return {
     id: 'analysis-' + Date.now(),
-    profileId: 'profile-custom',
+    profileId: 'profile-' + Date.now(),
     goalId: goalTitle.toLowerCase().replace(/\s+/g, '-'),
     goalTitle,
-    readinessScore: 54,
+    readinessScore: calculatedScore,
     alreadyHave,
     stillNeed,
-    path,
+    path: pathSteps,
     createdAt: new Date().toISOString(),
     categoryBreakdown: {
-      technical: 55,
-      soft: 70,
-      languages: 65
+      technical: Math.min(95, Math.max(30, Math.round(calculatedScore * 0.95))),
+      soft: Math.min(95, Math.max(50, Math.round(calculatedScore * 1.15))),
+      languages: Math.min(90, Math.max(40, Math.round(calculatedScore * 0.9)))
     },
-    summaryNote: isEstonian
-      ? "Sinu olemasolevad oskused loovad hea vundamendi. Sihipärane teekond aitab sul saavutada vajalikud oskused."
-      : "Your transferable background provides a solid launchpad. Following this sequenced roadmap will get you ready.",
-    encouragingHeadline: isEstonian ? "Oled 4 sammu kaugusel valmisolekust!" : "You're 4 steps from ready!"
+    summaryNote,
+    encouragingHeadline
   };
 }

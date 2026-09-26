@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, AlertTriangle, Plus, X, Sparkles, Edit2, Check, BarChart2, ShieldCheck } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertTriangle, Plus, X, Compass, Edit2, BarChart2 } from 'lucide-react';
 import { Language, GapAnalysis, Skill } from '../types';
 import { translations } from '../i18n/translations';
 
@@ -134,7 +134,7 @@ export const SkillGapScreen: React.FC<SkillGapScreenProps> = ({
           {/* Encouraging Headline & Summary */}
           <div className="flex-1 text-center sm:text-left space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-100/80 text-teal-800 text-xs font-semibold">
-              <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+              <Compass className="w-3.5 h-3.5 text-teal-700" />
               <span>{analysis.encouragingHeadline || t.skillGap.encouragingTagline}</span>
             </div>
 

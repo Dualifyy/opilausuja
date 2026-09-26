@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, ArrowRight, Sparkles, X, Plus, ShieldCheck } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, ArrowRight, X, Plus, ShieldCheck } from 'lucide-react';
 import { Language, UserProfile } from '../types';
 import { translations } from '../i18n/translations';
-import { COMMON_SKILLS, DEMO_PRESETS, DemoPreset } from '../config';
+import { COMMON_SKILLS } from '../config';
 import { extractTextFromFile } from '../services/pdfService';
 
 interface InputScreenProps {
@@ -60,15 +60,6 @@ export const InputScreen: React.FC<InputScreenProps> = ({
     }
   };
 
-  const handleApplyPreset = (preset: DemoPreset) => {
-    setRawText(preset.input);
-    if (preset.fileName) {
-      setFileName(preset.fileName);
-      setActiveTab('upload');
-    } else {
-      setActiveTab('text');
-    }
-  };
 
   const handleProceed = () => {
     if (!rawText.trim()) return;
@@ -272,24 +263,6 @@ export const InputScreen: React.FC<InputScreenProps> = ({
         </div>
       )}
 
-      {/* Quick Demo Profiles Box */}
-      <div className="p-3 bg-teal-50/50 border border-teal-100 rounded-xl space-y-2">
-        <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-          {t.input.loadSampleBtn}:
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {DEMO_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => handleApplyPreset(p)}
-              className="px-2.5 py-1.5 rounded-lg bg-white text-slate-700 hover:text-teal-800 border border-teal-200 text-xs font-semibold shadow-2xs hover:bg-teal-50/80 transition-colors cursor-pointer"
-            >
-              {lang === 'et' ? p.nameEt : p.name}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Privacy Guarantee Note */}
       <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center gap-2 text-xs text-slate-600">

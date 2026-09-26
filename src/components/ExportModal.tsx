@@ -15,8 +15,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   analysis,
   lang,
 }) => {
-  if (!isOpen) return null;
   const [copied, setCopied] = useState(false);
+
+  if (!isOpen) return null;
 
   const generateMarkdown = () => {
     return `# Õpilausuja — Learning & Career Path: ${analysis.goalTitle}

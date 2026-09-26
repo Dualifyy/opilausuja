@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, UploadCloud, Play, Sparkles, CheckCircle2, Search, Target, BookOpen, Star, Compass } from 'lucide-react';
+import { ArrowRight, UploadCloud, Play, Search, Target, BookOpen, Star, Compass } from 'lucide-react';
 import { Language, GapAnalysis } from '../types';
 import { translations } from '../i18n/translations';
 import { DEMO_PRESETS, FOUR_STEPS_PROMISE, DemoPreset } from '../config';
@@ -28,14 +28,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
       <div className="bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-teal-50/80 border border-teal-100 rounded-2xl p-4 sm:p-5 shadow-xs">
         <div className="text-center mb-3">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-100/80 text-teal-800 text-xs font-semibold tracking-wide">
-            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+            <Compass className="w-3.5 h-3.5 text-teal-700" />
             {t.hero.badge}
           </span>
         </div>
 
         {/* 4 Steps Visual Badges */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-w-3xl mx-auto">
-          {FOUR_STEPS_PROMISE.map((step, idx) => (
+          {FOUR_STEPS_PROMISE.map((step) => (
             <div 
               key={step.step}
               className="bg-white/90 backdrop-blur-xs p-3 rounded-xl border border-teal-100/70 shadow-xs flex flex-col items-center text-center group hover:border-teal-300 transition-all"
