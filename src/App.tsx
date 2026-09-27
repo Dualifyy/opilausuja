@@ -1,364 +1,202 @@
-import React, { useState } from 'react';
-import { AppScreen, Language, GapAnalysis, PathStep, UserProfile, Goal, AISettings, Skill } from './types';
-import { storageService } from './services/storageService';
-import { analyzeProfileWithAI } from './services/aiService';
-import { DemoPreset } from './config';
+import { useState } from 'react'
+import {
+  ArrowRight,
+  Bell,
+  BookOpen,
+  BriefcaseBusiness,
+  Check,
+  ChevronDown,
+  Compass,
+  GraduationCap,
+  Home,
+  Menu,
+  Pencil,
+  Sparkles,
+  Target,
+  Trophy,
+  UserRound,
+  X,
+  Zap,
+} from 'lucide-react'
 
-import { Header } from './components/Header';
-import { StepArc } from './components/StepArc';
-import { BottomNav } from './components/BottomNav';
-import { DesktopSidebar } from './components/DesktopSidebar';
-import { WelcomeScreen } from './components/WelcomeScreen';
-import { InputScreen } from './components/InputScreen';
-import { GoalScreen } from './components/GoalScreen';
-import { AnalyzingScreen } from './components/AnalyzingScreen';
-import { SkillGapScreen } from './components/SkillGapScreen';
-import { LearningPathScreen } from './components/LearningPathScreen';
-import { StepDetailModal } from './components/StepDetailModal';
-import { HistoryScreen } from './components/HistoryScreen';
-import { SettingsModal } from './components/SettingsModal';
-import { ExportModal } from './components/ExportModal';
+type Screen = 'home' | 'start' | 'profile' | 'goal' | 'paths' | 'team'
 
-export const App: React.FC = () => {
-  // Core state
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
-  const [lang, setLang] = useState<Language>(() => storageService.getLanguage());
-  const [settings, setSettings] = useState<AISettings>(() => storageService.getSettings());
-  const [history, setHistory] = useState<GapAnalysis[]>(() => storageService.getAnalysisHistory());
-  const [activeAnalysis, setActiveAnalysis] = useState<GapAnalysis | null>(() => storageService.getLatestAnalysis());
+const navItems = [
+  { label: 'Avaleht', icon: Home, screen: 'home' as Screen },
+  { label: 'Minu profiil', icon: UserRound, screen: 'profile' as Screen },
+  { label: 'Karjäärirajad', icon: Compass, screen: 'paths' as Screen },
+  { label: 'Väljakutsed', icon: Trophy, screen: 'goal' as Screen },
+  { label: 'Õppimine', icon: BookOpen, screen: 'paths' as Screen, activeScreen: null },
+  { label: 'Minu areng', icon: Zap, screen: 'team' as Screen },
+]
 
-  // Input & Workflow Draft
-  const [draftInput, setDraftInput] = useState<string>('');
-  const [draftFileName, setDraftFileName] = useState<string>('');
-  const [draftMode, setDraftMode] = useState<'upload' | 'text'>('text');
-  const [selectedGoalTitle, setSelectedGoalTitle] = useState<string>('');
+const pathCards = [
+  {
+    title: 'UX/UI disainer',
+    match: '82% sobivus',
+    description: 'Loo kasutajasõbralikke digilahendusi ja ühenda loovus tehnoloogiaga.',
+    skills: ['suhtlemine', 'digivahendid', 'loovus'],
+    icon: Pencil,
+    tone: 'blue',
+    recommended: true,
+  },
+  {
+    title: 'Product Specialist',
+    match: '79% sobivus',
+    description: 'Toeta toodete arendust ja aita siduda kasutaja vajadused ning tehnoloogia.',
+    skills: ['probleemilahendus', 'analüüs', 'suhtlemine'],
+    icon: Zap,
+    tone: 'mint',
+  },
+  {
+    title: 'Learning Designer',
+    match: '76% sobivus',
+    description: 'Kasuta õpetamise ja digilahenduste kogemust õppelahenduste loomiseks.',
+    skills: ['õpetamine', 'digivahendid', 'juhendamine'],
+    icon: GraduationCap,
+    tone: 'lilac',
+  },
+]
 
-  // Modals & Async States
-  const [selectedStepDetail, setSelectedStepDetail] = useState<PathStep | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [_isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analyzingError, setAnalyzingError] = useState<string | null>(null);
-
-  // Sync language changes to localStorage
-  const handleLanguageChange = (newLang: Language) => {
-    setLang(newLang);
-    storageService.saveLanguage(newLang);
-  };
-
-  const handleSaveSettings = (newSettings: AISettings) => {
-    setSettings(newSettings);
-    storageService.saveSettings(newSettings);
-  };
-
-  const handleClearData = () => {
-    storageService.clearAllData();
-    setHistory([]);
-    setActiveAnalysis(null);
-    setDraftInput('');
-    setDraftFileName('');
-    setCurrentScreen('welcome');
-  };
-
-  // Workflow Handlers
-  const handleStartFromWelcome = (initialTab: 'upload' | 'text' = 'text') => {
-    setDraftMode(initialTab);
-    setCurrentScreen('input');
-  };
-
-  const handleSelectPreset = (preset: DemoPreset) => {
-    setDraftInput(preset.input);
-    setDraftFileName(preset.fileName || '');
-    setDraftMode(preset.fileName ? 'upload' : 'text');
-    setSelectedGoalTitle(preset.goalTitle);
-    runAnalysis(preset.input, preset.goalTitle);
-  };
-
-  const handleInputContinue = (profile: Partial<UserProfile>) => {
-    if (profile.rawInput) {
-      setDraftInput(profile.rawInput);
-    }
-    if (profile.fileName) {
-      setDraftFileName(profile.fileName);
-    }
-    setCurrentScreen('goal');
-  };
-
-  const handleGoalSelect = (goal: Goal) => {
-    const title = lang === 'et' && goal.titleEt ? goal.titleEt : goal.title;
-    setSelectedGoalTitle(title);
-    runAnalysis(draftInput, title);
-  };
-
-  const runAnalysis = async (input: string, goalTitle: string) => {
-    setIsAnalyzing(true);
-    setAnalyzingError(null);
-    setCurrentScreen('analyzing');
-
-    try {
-      const result = await analyzeProfileWithAI(input, goalTitle, settings, lang);
-      setActiveAnalysis(result);
-      storageService.saveAnalysis(result);
-      setHistory(storageService.getAnalysisHistory());
-      setCurrentScreen('gap');
-    } catch (err: any) {
-      setAnalyzingError(err.message || 'Analysis failed. Please check network connection or try again.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleToggleStepCompletion = (stepOrder: number, completed: boolean) => {
-    if (!activeAnalysis) return;
-    const updated = storageService.updateStepCompletion(activeAnalysis.id, stepOrder, completed);
-    if (updated) {
-      setActiveAnalysis({ ...updated });
-      setHistory(storageService.getAnalysisHistory());
-      // Also update modal if open
-      if (selectedStepDetail && selectedStepDetail.order === stepOrder) {
-        setSelectedStepDetail({ ...selectedStepDetail, completed });
-      }
-    }
-  };
-
-  const handleUpdateSkills = (alreadyHave: Skill[], stillNeed: Skill[]) => {
-    if (!activeAnalysis) return;
-    const updated = storageService.updateSkills(activeAnalysis.id, alreadyHave, stillNeed);
-    if (updated) {
-      setActiveAnalysis({ ...updated });
-      setHistory(storageService.getAnalysisHistory());
-    }
-  };
-
-  const handleDeleteAnalysis = (id: string) => {
-    storageService.deleteAnalysis(id);
-    const updatedHistory = storageService.getAnalysisHistory();
-    setHistory(updatedHistory);
-    if (activeAnalysis?.id === id) {
-      setActiveAnalysis(updatedHistory[0] || null);
-    }
-  };
-
-  // Step Arc step calculation
-  const getStepNumber = (): number => {
-    switch (currentScreen) {
-      case 'input': return 1;
-      case 'goal': return 2;
-      case 'analyzing': return 3;
-      case 'gap': return 3;
-      case 'path': return 4;
-      default: return 1;
-    }
-  };
-
-  const handleStepArcClick = (stepNum: number) => {
-    if (stepNum === 1) setCurrentScreen('input');
-    else if (stepNum === 2) setCurrentScreen('goal');
-    else if (stepNum === 3 && activeAnalysis) setCurrentScreen('gap');
-    else if (stepNum === 4 && activeAnalysis) setCurrentScreen('path');
-  };
-
-  // Screen Content Renderer
-  const renderScreenContent = () => {
-    switch (currentScreen) {
-      case 'welcome':
-        return (
-          <WelcomeScreen
-            lang={lang}
-            onStart={handleStartFromWelcome}
-            onSelectPreset={handleSelectPreset}
-            latestAnalysis={activeAnalysis}
-            onResumeLatest={() => setCurrentScreen('path')}
-          />
-        );
-
-      case 'input':
-        return (
-          <InputScreen
-            lang={lang}
-            initialMode={draftMode}
-            onContinue={handleInputContinue}
-            onBack={() => setCurrentScreen('welcome')}
-            initialInput={draftInput}
-            initialFileName={draftFileName}
-          />
-        );
-
-      case 'goal':
-        return (
-          <GoalScreen
-            lang={lang}
-            onSelectGoal={handleGoalSelect}
-            onBack={() => setCurrentScreen('input')}
-            initialGoalTitle={selectedGoalTitle}
-          />
-        );
-
-      case 'analyzing':
-        return (
-          <AnalyzingScreen
-            lang={lang}
-            goalTitle={selectedGoalTitle}
-            error={analyzingError}
-            onRetry={() => runAnalysis(draftInput, selectedGoalTitle)}
-          />
-        );
-
-      case 'gap':
-        return activeAnalysis ? (
-          <SkillGapScreen
-            lang={lang}
-            analysis={activeAnalysis}
-            onViewPath={() => setCurrentScreen('path')}
-            onUpdateSkills={handleUpdateSkills}
-            onBack={() => setCurrentScreen('goal')}
-          />
-        ) : (
-          <WelcomeScreen
-            lang={lang}
-            onStart={handleStartFromWelcome}
-            onSelectPreset={handleSelectPreset}
-            latestAnalysis={null}
-            onResumeLatest={() => {}}
-          />
-        );
-
-      case 'path':
-        return activeAnalysis ? (
-          <LearningPathScreen
-            lang={lang}
-            analysis={activeAnalysis}
-            onToggleStep={handleToggleStepCompletion}
-            onSelectStepDetail={(step) => setSelectedStepDetail(step)}
-            onBackToGap={() => setCurrentScreen('gap')}
-            onCompareWithAnother={() => setCurrentScreen('history')}
-            onExport={() => setIsExportOpen(true)}
-          />
-        ) : (
-          <WelcomeScreen
-            lang={lang}
-            onStart={handleStartFromWelcome}
-            onSelectPreset={handleSelectPreset}
-            latestAnalysis={null}
-            onResumeLatest={() => {}}
-          />
-        );
-
-      case 'history':
-        return (
-          <HistoryScreen
-            lang={lang}
-            history={history}
-            onSelectAnalysis={(analysis) => {
-              setActiveAnalysis(analysis);
-              setCurrentScreen('path');
-            }}
-            onDeleteAnalysis={handleDeleteAnalysis}
-            onStartNew={() => {
-              setDraftInput('');
-              setDraftFileName('');
-              setCurrentScreen('input');
-            }}
-          />
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  const showStepArc = ['input', 'goal', 'analyzing', 'gap', 'path'].includes(currentScreen);
-
+function Logo() {
   return (
-    <div className="min-h-screen bg-[#FAF9F6] flex flex-col text-stone-900 font-sans selection:bg-teal-100 selection:text-teal-900">
-      {/* Top Application Header */}
-      <Header
-        currentScreen={currentScreen}
-        lang={lang}
-        onLanguageChange={handleLanguageChange}
-        onOpenHistory={() => setCurrentScreen('history')}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onNavigateHome={() => setCurrentScreen('welcome')}
-        onStartNew={() => {
-          setDraftInput('');
-          setDraftFileName('');
-          setCurrentScreen('input');
-        }}
-        savedCount={history.length}
-      />
-
-      {/* Main Content Layout Container */}
-      <div className="flex-1 flex min-h-0">
-        {/* Left Desktop Sidebar: STICKY so it scrolls along with user and does not stay behind! */}
-        <div className="hidden md:block shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
-          <DesktopSidebar
-            currentScreen={currentScreen}
-            onNavigate={(screen) => setCurrentScreen(screen)}
-            lang={lang}
-            hasActiveAnalysis={!!activeAnalysis}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            savedCount={history.length}
-          />
-        </div>
-
-        {/* Right Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {showStepArc && (
-            <StepArc
-              currentStep={getStepNumber()}
-              lang={lang}
-              onStepClick={handleStepArcClick}
-            />
-          )}
-
-          <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 md:p-8 pb-24 md:pb-12">
-            {renderScreenContent()}
-          </main>
-        </div>
-      </div>
-
-      {/* Mobile Bottom Navigation: Docked at bottom for small screens */}
-      <div className="md:hidden">
-        <BottomNav
-          currentScreen={currentScreen}
-          onNavigate={(screen) => setCurrentScreen(screen)}
-          lang={lang}
-          hasActiveAnalysis={!!activeAnalysis}
-        />
-      </div>
-
-      {/* Step Detail Modal */}
-      <StepDetailModal
-        step={selectedStepDetail}
-        lang={lang}
-        onClose={() => setSelectedStepDetail(null)}
-        onToggleComplete={handleToggleStepCompletion}
-      />
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        lang={lang}
-        onLanguageChange={handleLanguageChange}
-        viewMode="desktop"
-        onViewModeChange={() => {}}
-        settings={settings}
-        onSaveSettings={handleSaveSettings}
-        onClearData={handleClearData}
-      />
-
-      {/* Export / Share Modal */}
-      {activeAnalysis && (
-        <ExportModal
-          isOpen={isExportOpen}
-          onClose={() => setIsExportOpen(false)}
-          analysis={activeAnalysis}
-          lang={lang}
-        />
-      )}
+    <div className="logo" aria-label="Spark">
+      <Sparkles size={27} strokeWidth={3} />
+      <span>Spark</span>
     </div>
-  );
-};
+  )
+}
 
-export default App;
+function Progress({ step }: { step: number }) {
+  const steps = ['Profiil', 'Eesmärk', 'Karjäärivahetus', 'Soovitused', 'Sinu teekond']
+  return (
+    <div className="progress">
+      {steps.map((label, index) => {
+        const number = index + 1
+        const active = number <= step
+        return (
+          <div className="progress-item" key={label}>
+            <div className={`progress-dot ${active ? 'active' : ''}`}>
+              {number < step ? <Check size={16} strokeWidth={3} /> : number}
+            </div>
+            <span className={active ? 'active-label' : ''}>{label}</span>
+            {index < steps.length - 1 && <div className={`progress-line ${number < step ? 'filled' : ''}`} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Sidebar({ screen, onNavigate, open, onClose }: { screen: Screen; onNavigate: (screen: Screen) => void; open: boolean; onClose: () => void }) {
+  return (
+    <aside className={`sidebar ${open ? 'open' : ''}`}>
+      <div className="sidebar-top">
+        <div className="sidebar-logo"><Logo /></div>
+        <button className="icon-button mobile-only" onClick={onClose} aria-label="Sulge menüü"><X size={22} /></button>
+      </div>
+      <nav>
+        {navItems.map(({ label, icon: Icon, screen: target, activeScreen }) => (
+          <button key={label} className={`nav-link ${screen === (activeScreen === undefined ? target : activeScreen) ? 'selected' : ''}`} onClick={() => { onNavigate(target); onClose() }}>
+            <Icon size={20} strokeWidth={1.8} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-promo">
+        <strong>Suuremad võimalused<br />algavad sinust.</strong>
+        <div className="promo-art"><span>→</span></div>
+      </div>
+    </aside>
+  )
+}
+
+function Topbar({ screen, step, onNavigate, onMenu }: { screen: Screen; step: number; onNavigate: (screen: Screen) => void; onMenu: () => void }) {
+  return (
+    <header className="topbar">
+      <button className="icon-button mobile-only" onClick={onMenu} aria-label="Ava menüü"><Menu size={23} /></button>
+      <button className={`topbar-logo ${step > 0 ? 'product-top-logo' : ''}`} onClick={() => onNavigate('home')}><Logo /></button>
+      {!step && <nav className="top-links">
+        {['Home', 'How it works', 'Career paths', 'Challenges', 'Pricing'].map((item, index) => (
+          <button className={index === 0 && screen === 'home' ? 'current' : ''} key={item} onClick={() => index === 0 ? onNavigate('home') : onNavigate('paths')}>{item}</button>
+        ))}
+      </nav>}
+      <div className="top-actions">
+        <button className="icon-button notification"><Bell size={20} /><i /></button>
+        <span className="xp">+50 XP</span>
+        <div className="avatar">MT</div>
+        <span className="user-name">Mari Tamm</span>
+        <ChevronDown size={16} />
+      </div>
+      {step > 0 && <div className="stepbar"><Progress step={step} /></div>}
+    </header>
+  )
+}
+
+function Button({ children, outline = false, onClick, wide = false }: { children: React.ReactNode; outline?: boolean; onClick?: () => void; wide?: boolean }) {
+  return <button className={`button ${outline ? 'outline' : ''} ${wide ? 'wide' : ''}`} onClick={onClick}>{children}</button>
+}
+
+function HomeScreen({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="home-screen">
+      <section className="hero">
+        <div className="hero-copy">
+          <div className="eyebrow"><span /> CAREER EXPLORATION, REIMAGINED</div>
+          <h1>Find your<br /><em>next move.</em></h1>
+          <p>Explore career directions based on your<br className="desktop-only" /> experience, skills and interests.</p>
+          <div className="hero-actions"><Button onClick={onStart}>Start exploring <ArrowRight size={20} /></Button><Button outline onClick={onStart}>Sign in</Button></div>
+          <small>Upload your CV or build your profile manually.</small>
+        </div>
+        <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
+        <div className="hero-card">
+          <div className="mini-spark"><Sparkles size={18} /></div>
+          <strong>Your next chapter<br />starts here.</strong>
+          <div className="mini-bars"><i /><i /><i /><i /></div>
+        </div>
+      </section>
+      <section className="home-benefits">
+        <div><span className="benefit-icon blue-bg"><Target size={23} /></span><div><strong>Know your direction</strong><p>See which paths fit your strengths.</p></div></div>
+        <div><span className="benefit-icon mint-bg"><Compass size={23} /></span><div><strong>Move with confidence</strong><p>Turn curiosity into your next step.</p></div></div>
+        <div><span className="benefit-icon lilac-bg"><Sparkles size={23} /></span><div><strong>Grow at your pace</strong><p>A plan made for you, not everyone.</p></div></div>
+      </section>
+    </div>
+  )
+}
+
+function StartScreen({ onChoose }: { onChoose: (screen: Screen) => void }) {
+  return <div className="flow-page start-page"><div className="flow-heading"><span className="kicker">LET'S GET STARTED</span><h1>Kuidas soovid alustada?</h1><p>Vali, kas laed üles oma CV või täidad andmed käsitsi.<br />Mõlemat saad hiljem muuta.</p></div><div className="choice-grid">
+    <article className="choice-card"><div className="choice-illustration upload-illustration"><BriefcaseBusiness size={52} /></div><h2>Lae üles CV</h2><p>Impordi oma kogemus, haridus ja oskused kiirelt CV põhjal.</p><span className="soft-pill">PDF, DOC või DOCX</span><Button wide onClick={() => onChoose('profile')}>Vali see <ArrowRight size={18} /></Button></article>
+    <article className="choice-card"><div className="choice-illustration form-illustration"><Pencil size={52} /></div><h2>Täida andmed käsitsi</h2><p>Lisa oma andmed samm-sammult ise, kui CV-d ei ole või soovid alustada nullist.</p><span className="soft-pill">Sobib ka ilma CV-ta</span><Button wide onClick={() => onChoose('profile')}>Vali see <ArrowRight size={18} /></Button></article>
+  </div><div className="info-note"><span>i</span> Saad hiljem oma valikut muuta.</div></div>
+}
+
+function ProfileScreen({ onNext }: { onNext: () => void }) {
+  const [skills, setSkills] = useState(['Suhtlemine', 'Probleemilahendus', 'Python', 'QA'])
+  return <div className="profile-page flow-page"><div className="profile-main"><div className="flow-heading left"><span className="kicker">STEP 1 · YOUR PROFILE</span><h1>Täida oma andmed käsitsi</h1><p>Lisa oma andmed samm-sammult. Spark kasutab seda, et soovitada sulle sobivaid karjääriradu.</p></div><div className="form-card"><div className="form-section"><h3><UserRound size={18} /> Põhiandmed</h3><div className="field-grid"><label>Eesnimi<input defaultValue="Mari" /></label><label>Perekonnanimi<input defaultValue="Tamm" /></label><label>E-post<input defaultValue="mari.tamm@email.ee" /></label><label>Asukoht<input defaultValue="Tallinn, Eesti" /></label></div></div><div className="form-section"><h3><GraduationCap size={18} /> Haridus</h3><div className="field-grid two"><label>Haridusasutus<input defaultValue="Tallinna Ülikool" /></label><label>Õppekava / eriala<input defaultValue="Haridusteadused, bakalaureus" /></label></div><div className="field-grid three"><label>Algusaeg<input defaultValue="2020" /></label><label>Lõpuaeg<input defaultValue="2023" /></label><label>Kirjeldus<input defaultValue="Haridustehnoloogia ja digipedagoogika." /></label></div><button className="add-row">＋ Lisa haridus</button></div><div className="form-section"><h3><BriefcaseBusiness size={18} /> Töökogemus</h3><div className="field-grid two"><label>Ametinimetus<input defaultValue="Haridustehnoloogia spetsialist" /></label><label>Organisatsioon<input defaultValue="ABC Kool" /></label></div><div className="field-grid two"><label>Asukoht<input defaultValue="Tallinn, Eesti" /></label><label>Algusaeg<input defaultValue="2023" /></label></div><button className="add-row">＋ Lisa töökogemus</button></div><div className="form-section"><h3><Zap size={18} /> Oskused</h3><div className="tag-list">{skills.map(skill => <button key={skill} onClick={() => setSkills(skills.filter(item => item !== skill))}>{skill} <X size={12} /></button>)}</div><button className="add-row">＋ Lisa oskus</button></div></div></div><aside className="cv-preview"><div className="preview-head"><strong>CV eelvaade</strong><span><i /> Uueneb automaatselt</span></div><div className="paper"><h2>Mari Tamm</h2><strong>Haridustehnoloogia spetsialist</strong><hr /><h3>Minust</h3><p>Haridustehnoloogia spetsialist, kelle kirg on kaasaegsete õppelahenduste arendamine ja õpetajate toetamine.</p><hr /><h3>Töökogemus</h3><p><b>2023 –</b> Haridustehnoloogia spetsialist<br /><small>ABC Kool · Tallinn, Eesti</small></p><hr /><h3>Oskused</h3><div className="preview-tags">{skills.slice(0, 4).map(skill => <span key={skill}>{skill}</span>)}</div></div></aside><div className="bottom-actions"><Button outline>Tagasi</Button><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+}
+
+function GoalScreen({ onNext }: { onNext: () => void }) {
+  const [selected, setSelected] = useState('Leida uus töö')
+  const goals = [{ title: 'Leida uus töö', text: 'Avasta sinu profiiliga sobivad ametid.', icon: BriefcaseBusiness, tone: 'blue' }, { title: 'Vahetada karjääri', text: 'Leia uus suund oma olemasolevate oskuste põhjal.', icon: Compass, tone: 'lilac' }, { title: 'Arendada praegusel erialal', text: 'Vaata, millised oskused aitavad sul edasi liikuda.', icon: Zap, tone: 'mint' }, { title: 'Ma ei ole veel kindel', text: 'Lase Sparkil sulle suunda soovitada.', icon: Target, tone: 'amber' }]
+  return <div className="flow-page goal-page"><div className="flow-heading"><span className="kicker">STEP 2 · YOUR GOAL</span><h1>Mida soovid järgmisena teha?</h1><p>Vali eesmärk. Spark aitab luua sulle sobivad järgmised sammud.</p></div><div className="goal-grid">{goals.map(({ title, text, icon: Icon, tone }) => <button className={`goal-card ${selected === title ? 'selected' : ''}`} onClick={() => setSelected(title)} key={title}><span className={`goal-icon ${tone}`}><Icon size={26} /></span>{selected === title && <span className="recommended"><Sparkles size={14} /> Soovitatud</span>}<h2>{title}</h2><p>{text}</p></button>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> Seda valikut saad hiljem muuta.</div><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+}
+
+function PathsScreen({ onNext }: { onNext: () => void }) {
+  return <div className="flow-page paths-page"><div className="flow-heading"><span className="kicker">YOUR NEXT MOVE</span><h1>Sulle soovitatud suunad</h1><p>Valisime sinu profiili ja eesmärgi põhjal kõige sobivamad suunad.</p><span className="goal-pill">Eesmärk: leida uus töö</span></div><div className="path-grid">{pathCards.map(({ title, match, description, skills, icon: Icon, tone, recommended }) => <article className={`path-card ${recommended ? 'featured' : ''}`} key={title}>{recommended && <span className="recommended"><Sparkles size={14} /> Soovitatud</span>}<span className={`path-icon ${tone}`}><Icon size={27} /></span><h2>{title}</h2><span className="match">{match}</span><p>{description}</p><hr /><small>Sul on juba:</small><div className="tag-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><Button outline={!recommended} onClick={onNext} wide>Vaata teekonda</Button></article>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> Saad alati hiljem mõne teise suuna valida.</div><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+}
+
+function TeamScreen() {
+  const steps = ['Tutvu valdkonnaga', 'Õpi põhiteed', 'Loo näidisprojekt', 'Koosta portfoolio']
+  return <div className="flow-page team-page"><div className="flow-heading left"><span className="kicker">YOUR JOURNEY</span><h1>Minu teekond</h1><p>Valisid suunaks UX/UI disaineri. Siin on sinu järgmised sammud.</p><span className="goal-pill">Valitud suund: UX/UI disainer</span></div><div className="journey-layout"><div className="journey-left"><article className="summary-card"><span className="path-icon blue"><Sparkles size={25} /></span><div><h2>Sul on juba olemas</h2><p>Sul on väärtuslikud oskused, mis aitavad sul edukalt uue suuna poole liikuda.</p><div className="tag-list">{['suhtlemine', 'digivahendid', 'loovus', 'õpetamine'].map(skill => <span key={skill}>{skill}</span>)}</div></div></article><article className="summary-card"><span className="path-icon lilac"><Target size={25} /></span><div><h2>Sinu eesmärk</h2><p>Liikuda UX/UI disaineri rolli ning rakendada oma loovust ja digioskusi kasutajakesksete lahenduste loomisel.</p></div></article></div><article className="steps-card"><div className="steps-head"><span className="path-icon blue"><Compass size={25} /></span><div><h2>Sinu sammud</h2><p>Siin on sinu teekond UX/UI disaineri suunas.</p></div></div><div className="journey-steps">{steps.map((step, i) => <div className="journey-step" key={step}><span>{i + 1}</span><div><h3>{step}</h3><p>{['Mõista, mida UX/UI disainer teeb.', 'Figma, kasutajauuring ja wireframe’id.', 'Harjuta ja loo esimene töö.', 'Pane oma töö ühte kohta kokku.'][i]}</p></div><small>◷ ~{[2, 6, 8, 4][i]} tundi</small></div>)}</div></article></div></div>
+}
+
+export default function App() {
+  const [screen, setScreen] = useState<Screen>('home')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const steps: Record<Screen, number> = { home: 0, start: 1, profile: 1, goal: 2, paths: 3, team: 5 }
+  const step = steps[screen]
+  const content = screen === 'home' ? <HomeScreen onStart={() => setScreen('start')} /> : screen === 'start' ? <StartScreen onChoose={setScreen} /> : screen === 'profile' ? <ProfileScreen onNext={() => setScreen('goal')} /> : screen === 'goal' ? <GoalScreen onNext={() => setScreen('paths')} /> : screen === 'paths' ? <PathsScreen onNext={() => setScreen('team')} /> : <TeamScreen />
+  const isPublic = screen === 'home'
+  return <div className={`app-shell ${isPublic ? 'public' : 'product'}`}><Topbar screen={screen} step={step} onNavigate={setScreen} onMenu={() => setMenuOpen(true)} />{!isPublic && <Sidebar screen={screen} onNavigate={setScreen} open={menuOpen} onClose={() => setMenuOpen(false)} />}<main className={isPublic ? 'public-main' : 'product-main'}>{content}</main></div>
+}
