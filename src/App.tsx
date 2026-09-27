@@ -239,7 +239,7 @@ function Sidebar({ screen, onNavigate, open, onClose, language }: { screen: Scre
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="sidebar-top">
-        <div className="sidebar-logo"><Logo /></div>
+        <button className="sidebar-logo" onClick={() => { onNavigate('home'); onClose() }} aria-label={copy(language, 'Avalehele', 'Go to homepage')}><Logo /></button>
         <button className="icon-button mobile-only" onClick={onClose} aria-label="Sulge menüü"><X size={22} /></button>
       </div>
       <nav>
