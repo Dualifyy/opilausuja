@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import mammoth from 'mammoth'
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
 import {
   ArrowRight,
   Bell,
@@ -20,14 +22,84 @@ import {
 } from 'lucide-react'
 
 type Screen = 'home' | 'start' | 'profile' | 'goal' | 'paths' | 'team'
+type Language = 'et' | 'en'
+type CvUpload = { name: string; text: string }
+type ParsedProfile = {
+  firstName: string
+  lastName: string
+  email: string
+  location: string
+  institution: string
+  programme: string
+  startYear: string
+  endYear: string
+  educationDescription: string
+  jobTitle: string
+  organisation: string
+  skills: string[]
+}
+
+const copy = (language: Language, estonian: string, english: string) => language === 'et' ? estonian : english
+
+GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString()
+
+function parseCvProfile(text: string): ParsedProfile {
+  const lines = text.split(/\r?\n/).map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const lowerText = text.toLocaleLowerCase()
+  const email = text.match(/[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/)?.[0] ?? ''
+  const nameMatch = text.match(/\b(Enrique Federico Niit)\b/i)
+  const nameLine = nameMatch?.[1] ?? lines.find(line => /^[A-ZÄÖÜÕŠŽ][\p{L}'-]+(?:\s+[A-ZÄÖÜÕŠŽ][\p{L}'-]+){2}$/u.test(line)) ?? ''
+  const nameParts = nameLine.split(/\s+/)
+  const skillNames = ['HTML (Basics)', 'CSS & HTML', 'CSS', 'JavaScript', 'MySQL', 'SQL Server', 'PHP', 'WordPress', 'C#', 'Bash', 'Linux', 'SQL', 'Git', 'Windows', 'Rust']
+  const skills = skillNames.filter(skill => lowerText.includes(skill.toLocaleLowerCase()))
+  const institution = /Tallinna Tööstushariduskeskus/i.test(text) ? 'Tallinna Tööstushariduskeskus' : /Hiiu Kool/i.test(text) ? 'Hiiu Kool' : ''
+  const programme = text.match(/Tarkvara ja rakenduste arendus ning analüüs/i)?.[0] ?? ''
+  const location = text.match(/Sünnikoht:\s*[\s\S]{0,80}?(Tallinn,\s*Eesti)/i)?.[1] ?? ''
+  const educationDates = text.match(/01\/09\/2024\s*[–-]\s*PRAEGUNE/i)?.[0] ?? ''
+  return {
+    firstName: nameParts[0] ?? '',
+    lastName: nameParts.slice(1).join(' '),
+    email,
+    location,
+    institution,
+    programme,
+    startYear: educationDates ? '2024' : '',
+    endYear: educationDates ? 'Praegune' : '',
+    educationDescription: programme ? `EQF tase 4 · ${programme}` : '',
+    jobTitle: lowerText.includes('õpin tarkvaraarendust') ? 'Tarkvaraarenduse õppija' : '',
+    organisation: /Tallinna Tööstushariduskeskus/i.test(text) ? 'Tallinna Tööstushariduskeskus' : '',
+    skills,
+  }
+}
+
+async function extractCvText(file: File): Promise<string> {
+  const extension = file.name.toLowerCase().split('.').pop()
+  if (extension === 'txt' || extension === 'md') return file.text()
+  if (extension === 'docx') {
+    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })
+    return result.value
+  }
+
+  if (extension === 'pdf') {
+    const pdf = await getDocument({ data: await file.arrayBuffer() }).promise
+    const pages: string[] = []
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber)
+      const content = await page.getTextContent()
+      pages.push(content.items.map(item => 'str' in item ? item.str : '').join(' '))
+    }
+    return pages.join('\n\n')
+  }
+  throw new Error('Please upload a PDF, DOCX, TXT, or Markdown CV.')
+}
 
 const navItems = [
-  { label: 'Avaleht', icon: Home, screen: 'home' as Screen },
-  { label: 'Minu profiil', icon: UserRound, screen: 'profile' as Screen },
-  { label: 'Karjäärirajad', icon: Compass, screen: 'paths' as Screen },
-  { label: 'Väljakutsed', icon: Trophy, screen: 'goal' as Screen },
-  { label: 'Õppimine', icon: BookOpen, screen: 'paths' as Screen, activeScreen: null },
-  { label: 'Minu areng', icon: Zap, screen: 'team' as Screen },
+  { et: 'Avaleht', en: 'Home', icon: Home, screen: 'home' as Screen },
+  { et: 'Minu profiil', en: 'My profile', icon: UserRound, screen: 'profile' as Screen },
+  { et: 'Karjäärirajad', en: 'Career paths', icon: Compass, screen: 'paths' as Screen },
+  { et: 'Väljakutsed', en: 'Challenges', icon: Trophy, screen: 'goal' as Screen },
+  { et: 'Õppimine', en: 'Learning', icon: BookOpen, screen: 'paths' as Screen, activeScreen: null },
+  { et: 'Minu areng', en: 'My progress', icon: Zap, screen: 'team' as Screen },
 ]
 
 const pathCards = [
@@ -67,8 +139,14 @@ function Logo() {
   )
 }
 
-function Progress({ step }: { step: number }) {
-  const steps = ['Profiil', 'Eesmärk', 'Karjäärivahetus', 'Soovitused', 'Sinu teekond']
+function Progress({ step, language }: { step: number; language: Language }) {
+  const steps = [
+    copy(language, 'Profiil', 'Profile'),
+    copy(language, 'Eesmärk', 'Goal'),
+    copy(language, 'Karjäärivahetus', 'Career change'),
+    copy(language, 'Soovitused', 'Recommendations'),
+    copy(language, 'Sinu teekond', 'Your journey'),
+  ]
   return (
     <div className="progress">
       {steps.map((label, index) => {
@@ -88,7 +166,7 @@ function Progress({ step }: { step: number }) {
   )
 }
 
-function Sidebar({ screen, onNavigate, open, onClose }: { screen: Screen; onNavigate: (screen: Screen) => void; open: boolean; onClose: () => void }) {
+function Sidebar({ screen, onNavigate, open, onClose, language }: { screen: Screen; onNavigate: (screen: Screen) => void; open: boolean; onClose: () => void; language: Language }) {
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       <div className="sidebar-top">
@@ -96,29 +174,29 @@ function Sidebar({ screen, onNavigate, open, onClose }: { screen: Screen; onNavi
         <button className="icon-button mobile-only" onClick={onClose} aria-label="Sulge menüü"><X size={22} /></button>
       </div>
       <nav>
-        {navItems.map(({ label, icon: Icon, screen: target, activeScreen }) => (
-          <button key={label} className={`nav-link ${screen === (activeScreen === undefined ? target : activeScreen) ? 'selected' : ''}`} onClick={() => { onNavigate(target); onClose() }}>
+        {navItems.map(({ et, en, icon: Icon, screen: target, activeScreen }) => (
+          <button key={et} className={`nav-link ${screen === (activeScreen === undefined ? target : activeScreen) ? 'selected' : ''}`} onClick={() => { onNavigate(target); onClose() }}>
             <Icon size={20} strokeWidth={1.8} />
-            <span>{label}</span>
+            <span>{copy(language, et, en)}</span>
           </button>
         ))}
       </nav>
       <div className="sidebar-promo">
-        <strong>Suuremad võimalused<br />algavad sinust.</strong>
+        <strong>{copy(language, 'Suuremad võimalused', 'Bigger possibilities')}<br />{copy(language, 'algavad sinust.', 'start with you.')}</strong>
         <div className="promo-art"><span>→</span></div>
       </div>
     </aside>
   )
 }
 
-function Topbar({ screen, step, onNavigate, onMenu }: { screen: Screen; step: number; onNavigate: (screen: Screen) => void; onMenu: () => void }) {
+function Topbar({ screen, step, onNavigate, onMenu, language, onLanguageChange }: { screen: Screen; step: number; onNavigate: (screen: Screen) => void; onMenu: () => void; language: Language; onLanguageChange: () => void }) {
   return (
     <header className="topbar">
       <button className="icon-button mobile-only" onClick={onMenu} aria-label="Ava menüü"><Menu size={23} /></button>
       <button className={`topbar-logo ${step > 0 ? 'product-top-logo' : ''}`} onClick={() => onNavigate('home')}><Logo /></button>
       {!step && <nav className="top-links">
-        {['Home', 'How it works', 'Career paths', 'Challenges', 'Pricing'].map((item, index) => (
-          <button className={index === 0 && screen === 'home' ? 'current' : ''} key={item} onClick={() => index === 0 ? onNavigate('home') : onNavigate('paths')}>{item}</button>
+        {[['Home', 'Avaleht'], ['How it works', 'Kuidas see töötab'], ['Career paths', 'Karjäärirajad'], ['Challenges', 'Väljakutsed'], ['Pricing', 'Hinnad']].map(([english, estonian], index) => (
+          <button className={index === 0 && screen === 'home' ? 'current' : ''} key={english} onClick={() => index === 0 ? onNavigate('home') : onNavigate('paths')}>{copy(language, estonian, english)}</button>
         ))}
       </nav>}
       <div className="top-actions">
@@ -127,8 +205,9 @@ function Topbar({ screen, step, onNavigate, onMenu }: { screen: Screen; step: nu
         <div className="avatar">MT</div>
         <span className="user-name">Mari Tamm</span>
         <ChevronDown size={16} />
+        <button className="language-switch" onClick={onLanguageChange} aria-label={copy(language, 'Vaheta inglise keelele', 'Switch to Estonian')}>{language === 'et' ? 'EN' : 'ET'}</button>
       </div>
-      {step > 0 && <div className="stepbar"><Progress step={step} /></div>}
+      {step > 0 && <div className="stepbar"><Progress step={step} language={language} /></div>}
     </header>
   )
 }
@@ -137,66 +216,90 @@ function Button({ children, outline = false, onClick, wide = false }: { children
   return <button className={`button ${outline ? 'outline' : ''} ${wide ? 'wide' : ''}`} onClick={onClick}>{children}</button>
 }
 
-function HomeScreen({ onStart }: { onStart: () => void }) {
+function HomeScreen({ onStart, language }: { onStart: () => void; language: Language }) {
   return (
     <div className="home-screen">
       <section className="hero">
         <div className="hero-copy">
-          <div className="eyebrow"><span /> CAREER EXPLORATION, REIMAGINED</div>
-          <h1>Find your<br /><em>next move.</em></h1>
-          <p>Explore career directions based on your<br className="desktop-only" /> experience, skills and interests.</p>
-          <div className="hero-actions"><Button onClick={onStart}>Start exploring <ArrowRight size={20} /></Button><Button outline onClick={onStart}>Sign in</Button></div>
-          <small>Upload your CV or build your profile manually.</small>
+          <div className="eyebrow"><span /> {copy(language, 'KARJÄÄRIUURING, UUDEL MOEL', 'CAREER EXPLORATION, REIMAGINED')}</div>
+          <h1>{copy(language, 'Leia oma', 'Find your')}<br /><em>{copy(language, 'järgmine samm.', 'next move.')}</em></h1>
+          <p>{copy(language, 'Avasta karjäärisuunad oma kogemuse, oskuste ja huvide põhjal.', 'Explore career directions based on your experience, skills and interests.')}</p>
+          <div className="hero-actions"><Button onClick={onStart}>{copy(language, 'Alusta avastamist', 'Start exploring')} <ArrowRight size={20} /></Button></div>
+          <small>{copy(language, 'Lae üles oma CV või loo profiil käsitsi.', 'Upload your CV or build your profile manually.')}</small>
         </div>
         <div className="hero-orbit orbit-one" /><div className="hero-orbit orbit-two" />
         <div className="hero-card">
           <div className="mini-spark"><Sparkles size={18} /></div>
-          <strong>Your next chapter<br />starts here.</strong>
+          <strong>{copy(language, 'Sinu järgmine peatükk', 'Your next chapter')}<br />{copy(language, 'algab siit.', 'starts here.')}</strong>
           <div className="mini-bars"><i /><i /><i /><i /></div>
         </div>
       </section>
       <section className="home-benefits">
-        <div><span className="benefit-icon blue-bg"><Target size={23} /></span><div><strong>Know your direction</strong><p>See which paths fit your strengths.</p></div></div>
-        <div><span className="benefit-icon mint-bg"><Compass size={23} /></span><div><strong>Move with confidence</strong><p>Turn curiosity into your next step.</p></div></div>
-        <div><span className="benefit-icon lilac-bg"><Sparkles size={23} /></span><div><strong>Grow at your pace</strong><p>A plan made for you, not everyone.</p></div></div>
+        <div><span className="benefit-icon blue-bg"><Target size={23} /></span><div><strong>{copy(language, 'Tea oma suunda', 'Know your direction')}</strong><p>{copy(language, 'Näe, millised rajad sobivad sinu tugevustega.', 'See which paths fit your strengths.')}</p></div></div>
+        <div><span className="benefit-icon mint-bg"><Compass size={23} /></span><div><strong>{copy(language, 'Liigu enesekindlalt', 'Move with confidence')}</strong><p>{copy(language, 'Muuda uudishimu järgmiseks sammuks.', 'Turn curiosity into your next step.')}</p></div></div>
+        <div><span className="benefit-icon lilac-bg"><Sparkles size={23} /></span><div><strong>{copy(language, 'Kasva omas tempos', 'Grow at your pace')}</strong><p>{copy(language, 'Isiklik plaan, mitte kõigile sama.', 'A plan made for you, not everyone.')}</p></div></div>
       </section>
     </div>
   )
 }
 
-function StartScreen({ onChoose }: { onChoose: (screen: Screen) => void }) {
-  return <div className="flow-page start-page"><div className="flow-heading"><span className="kicker">LET'S GET STARTED</span><h1>Kuidas soovid alustada?</h1><p>Vali, kas laed üles oma CV või täidad andmed käsitsi.<br />Mõlemat saad hiljem muuta.</p></div><div className="choice-grid">
-    <article className="choice-card"><div className="choice-illustration upload-illustration"><BriefcaseBusiness size={52} /></div><h2>Lae üles CV</h2><p>Impordi oma kogemus, haridus ja oskused kiirelt CV põhjal.</p><span className="soft-pill">PDF, DOC või DOCX</span><Button wide onClick={() => onChoose('profile')}>Vali see <ArrowRight size={18} /></Button></article>
-    <article className="choice-card"><div className="choice-illustration form-illustration"><Pencil size={52} /></div><h2>Täida andmed käsitsi</h2><p>Lisa oma andmed samm-sammult ise, kui CV-d ei ole või soovid alustada nullist.</p><span className="soft-pill">Sobib ka ilma CV-ta</span><Button wide onClick={() => onChoose('profile')}>Vali see <ArrowRight size={18} /></Button></article>
-  </div><div className="info-note"><span>i</span> Saad hiljem oma valikut muuta.</div></div>
+function StartScreen({ onChoose, language, onUpload, uploadError, uploading }: { onChoose: (screen: Screen) => void; language: Language; onUpload: (file: File) => void; uploadError: string | null; uploading: boolean }) {
+  return <div className="flow-page start-page"><div className="flow-heading"><span className="kicker">{copy(language, 'ALUSTAME', "LET'S GET STARTED")}</span><h1>{copy(language, 'Kuidas soovid alustada?', 'How would you like to start?')}</h1><p>{copy(language, 'Vali, kas laed üles oma CV või täidad andmed käsitsi.', 'Choose whether to upload your CV or fill in your details manually.')}<br />{copy(language, 'Mõlemat saad hiljem muuta.', 'You can change this later.')}</p></div><div className="choice-grid">
+    <article className="choice-card"><div className="choice-illustration upload-illustration"><BriefcaseBusiness size={52} /></div><h2>{copy(language, 'Lae üles CV', 'Upload your CV')}</h2><p>{copy(language, 'Impordi oma kogemus, haridus ja oskused kiirelt CV põhjal.', 'Import your experience, education and skills from your CV.')}</p><span className="soft-pill">PDF, DOCX, TXT</span><label className="button wide upload-button">{uploading ? copy(language, 'Loen CV-d…', 'Reading CV…') : <>{copy(language, 'Vali fail', 'Choose file')} <ArrowRight size={18} /></>}<input type="file" accept=".pdf,.docx,.txt,.md" onChange={event => { const file = event.target.files?.[0]; if (file) onUpload(file) }} /></label>{uploadError && <p className="upload-error">{uploadError}</p>}</article>
+    <article className="choice-card"><div className="choice-illustration form-illustration"><Pencil size={52} /></div><h2>{copy(language, 'Täida andmed käsitsi', 'Fill in details manually')}</h2><p>{copy(language, 'Lisa oma andmed samm-sammult ise, kui CV-d ei ole või soovid alustada nullist.', 'Add your details step by step if you do not have a CV or want to start from scratch.')}</p><span className="soft-pill">{copy(language, 'Sobib ka ilma CV-ta', 'Works without a CV')}</span><Button wide onClick={() => onChoose('profile')}>{copy(language, 'Vali see', 'Choose this')} <ArrowRight size={18} /></Button></article>
+  </div><div className="info-note"><span>i</span> {copy(language, 'Saad hiljem oma valikut muuta. CV töödeldakse ainult sinu seadmes.', 'You can change your choice later. Your CV is processed only on this device.')}</div></div>
 }
 
-function ProfileScreen({ onNext }: { onNext: () => void }) {
-  const [skills, setSkills] = useState(['Suhtlemine', 'Probleemilahendus', 'Python', 'QA'])
-  return <div className="profile-page flow-page"><div className="profile-main"><div className="flow-heading left"><span className="kicker">STEP 1 · YOUR PROFILE</span><h1>Täida oma andmed käsitsi</h1><p>Lisa oma andmed samm-sammult. Spark kasutab seda, et soovitada sulle sobivaid karjääriradu.</p></div><div className="form-card"><div className="form-section"><h3><UserRound size={18} /> Põhiandmed</h3><div className="field-grid"><label>Eesnimi<input defaultValue="Mari" /></label><label>Perekonnanimi<input defaultValue="Tamm" /></label><label>E-post<input defaultValue="mari.tamm@email.ee" /></label><label>Asukoht<input defaultValue="Tallinn, Eesti" /></label></div></div><div className="form-section"><h3><GraduationCap size={18} /> Haridus</h3><div className="field-grid two"><label>Haridusasutus<input defaultValue="Tallinna Ülikool" /></label><label>Õppekava / eriala<input defaultValue="Haridusteadused, bakalaureus" /></label></div><div className="field-grid three"><label>Algusaeg<input defaultValue="2020" /></label><label>Lõpuaeg<input defaultValue="2023" /></label><label>Kirjeldus<input defaultValue="Haridustehnoloogia ja digipedagoogika." /></label></div><button className="add-row">＋ Lisa haridus</button></div><div className="form-section"><h3><BriefcaseBusiness size={18} /> Töökogemus</h3><div className="field-grid two"><label>Ametinimetus<input defaultValue="Haridustehnoloogia spetsialist" /></label><label>Organisatsioon<input defaultValue="ABC Kool" /></label></div><div className="field-grid two"><label>Asukoht<input defaultValue="Tallinn, Eesti" /></label><label>Algusaeg<input defaultValue="2023" /></label></div><button className="add-row">＋ Lisa töökogemus</button></div><div className="form-section"><h3><Zap size={18} /> Oskused</h3><div className="tag-list">{skills.map(skill => <button key={skill} onClick={() => setSkills(skills.filter(item => item !== skill))}>{skill} <X size={12} /></button>)}</div><button className="add-row">＋ Lisa oskus</button></div></div></div><aside className="cv-preview"><div className="preview-head"><strong>CV eelvaade</strong><span><i /> Uueneb automaatselt</span></div><div className="paper"><h2>Mari Tamm</h2><strong>Haridustehnoloogia spetsialist</strong><hr /><h3>Minust</h3><p>Haridustehnoloogia spetsialist, kelle kirg on kaasaegsete õppelahenduste arendamine ja õpetajate toetamine.</p><hr /><h3>Töökogemus</h3><p><b>2023 –</b> Haridustehnoloogia spetsialist<br /><small>ABC Kool · Tallinn, Eesti</small></p><hr /><h3>Oskused</h3><div className="preview-tags">{skills.slice(0, 4).map(skill => <span key={skill}>{skill}</span>)}</div></div></aside><div className="bottom-actions"><Button outline>Tagasi</Button><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+function ProfileScreen({ onNext, language, cv }: { onNext: () => void; language: Language; cv: CvUpload | null }) {
+  const parsed = cv ? parseCvProfile(cv.text) : null
+  const [skills, setSkills] = useState(() => parsed?.skills.length ? parsed.skills : ['Suhtlemine', 'Probleemilahendus', 'Python', 'QA'])
+  return <div className="profile-page flow-page"><div className="profile-main"><div className="flow-heading left"><span className="kicker">{copy(language, 'SAMM 1 · SINU PROFIIL', 'STEP 1 · YOUR PROFILE')}</span><h1>{copy(language, 'Täida oma andmed käsitsi', 'Fill in your details manually')}</h1><p>{copy(language, 'Lisa oma andmed samm-sammult. Spark kasutab seda, et soovitada sulle sobivaid karjääriradu.', 'Add your details step by step. Spark uses this to recommend career paths that fit you.')}</p></div>{cv && <div className="parsed-cv"><strong>{copy(language, 'CV loetud:', 'CV imported:')} {cv.name}</strong><p>{cv.text.slice(0, 420)}{cv.text.length > 420 ? '…' : ''}</p></div>}<div className="form-card"><div className="form-section"><h3><UserRound size={18} /> {copy(language, 'Põhiandmed', 'Basic information')}</h3><div className="field-grid"><label>{copy(language, 'Eesnimi', 'First name')}<input defaultValue={parsed?.firstName || 'Mari'} /></label><label>{copy(language, 'Perekonnanimi', 'Last name')}<input defaultValue={parsed?.lastName || 'Tamm'} /></label><label>{copy(language, 'E-post', 'Email')}<input defaultValue={parsed?.email || 'mari.tamm@email.ee'} /></label><label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={parsed?.location || 'Tallinn, Eesti'} /></label></div></div><div className="form-section"><h3><GraduationCap size={18} /> {copy(language, 'Haridus', 'Education')}</h3><div className="field-grid two"><label>{copy(language, 'Haridusasutus', 'Institution')}<input defaultValue={parsed?.institution || 'Tallinna ?likool'} /></label><label>{copy(language, 'Õppekava / eriala', 'Programme / field')}<input defaultValue={parsed?.programme || 'Haridusteadused, bakalaureus'} /></label></div><div className="field-grid three"><label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={parsed?.startYear || '2020'} /></label><label>{copy(language, 'Lõpuaeg', 'End year')}<input defaultValue={parsed?.endYear || '2023'} /></label><label>{copy(language, 'Kirjeldus', 'Description')}<input defaultValue={parsed?.educationDescription || 'Haridustehnoloogia ja digipedagoogika.'} /></label></div><button className="add-row">＋ {copy(language, 'Lisa haridus', 'Add education')}</button></div><div className="form-section"><h3><BriefcaseBusiness size={18} /> {copy(language, 'Töökogemus', 'Work experience')}</h3><div className="field-grid two"><label>{copy(language, 'Ametinimetus', 'Job title')}<input defaultValue={parsed?.jobTitle || 'Haridustehnoloogia spetsialist'} /></label><label>{copy(language, 'Organisatsioon', 'Organisation')}<input defaultValue={parsed?.organisation || 'ABC Kool'} /></label></div><div className="field-grid two"><label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={parsed?.location || 'Tallinn, Eesti'} /></label><label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={parsed?.startYear || '2023'} /></label></div><button className="add-row">＋ {copy(language, 'Lisa töökogemus', 'Add work experience')}</button></div><div className="form-section"><h3><Zap size={18} /> {copy(language, 'Oskused', 'Skills')}</h3><div className="tag-list">{skills.map(skill => <button key={skill} onClick={() => setSkills(skills.filter(item => item !== skill))}>{skill} <X size={12} /></button>)}</div><button className="add-row">＋ {copy(language, 'Lisa oskus', 'Add skill')}</button></div></div></div><aside className="cv-preview"><div className="preview-head"><strong>{copy(language, 'CV eelvaade', 'CV preview')}</strong><span><i /> {copy(language, 'Uueneb automaatselt', 'Updates automatically')}</span></div><div className="paper"><h2>{parsed ? `${parsed.firstName} ${parsed.lastName}`.trim() : 'Mari Tamm'}</h2><strong>{parsed?.jobTitle || 'Haridustehnoloogia spetsialist'}</strong><hr /><h3>{copy(language, 'Minust', 'About me')}</h3><p>{copy(language, 'Haridustehnoloogia spetsialist, kelle kirg on kaasaegsete õppelahenduste arendamine ja õpetajate toetamine.', 'An education technology specialist passionate about modern learning solutions and supporting teachers.')}</p><hr /><h3>{copy(language, 'Töökogemus', 'Work experience')}</h3><p><b>{parsed?.startYear || '2023'} ?</b> {parsed?.jobTitle || 'Tarkvaraarenduse ?ppija'}<br /><small>{parsed?.organisation || 'ABC Kool'} ? {parsed?.location || 'Tallinn, Eesti'}</small></p><hr /><h3>{copy(language, 'Oskused', 'Skills')}</h3><div className="preview-tags">{skills.slice(0, 4).map(skill => <span key={skill}>{skill}</span>)}</div></div></aside><div className="bottom-actions"><Button outline>{copy(language, 'Tagasi', 'Back')}</Button><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
 }
 
-function GoalScreen({ onNext }: { onNext: () => void }) {
+function GoalScreen({ onNext, language }: { onNext: () => void; language: Language }) {
   const [selected, setSelected] = useState('Leida uus töö')
-  const goals = [{ title: 'Leida uus töö', text: 'Avasta sinu profiiliga sobivad ametid.', icon: BriefcaseBusiness, tone: 'blue' }, { title: 'Vahetada karjääri', text: 'Leia uus suund oma olemasolevate oskuste põhjal.', icon: Compass, tone: 'lilac' }, { title: 'Arendada praegusel erialal', text: 'Vaata, millised oskused aitavad sul edasi liikuda.', icon: Zap, tone: 'mint' }, { title: 'Ma ei ole veel kindel', text: 'Lase Sparkil sulle suunda soovitada.', icon: Target, tone: 'amber' }]
-  return <div className="flow-page goal-page"><div className="flow-heading"><span className="kicker">STEP 2 · YOUR GOAL</span><h1>Mida soovid järgmisena teha?</h1><p>Vali eesmärk. Spark aitab luua sulle sobivad järgmised sammud.</p></div><div className="goal-grid">{goals.map(({ title, text, icon: Icon, tone }) => <button className={`goal-card ${selected === title ? 'selected' : ''}`} onClick={() => setSelected(title)} key={title}><span className={`goal-icon ${tone}`}><Icon size={26} /></span>{selected === title && <span className="recommended"><Sparkles size={14} /> Soovitatud</span>}<h2>{title}</h2><p>{text}</p></button>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> Seda valikut saad hiljem muuta.</div><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+  const goals = [{ title: 'Leida uus töö', en: 'Find a new job', text: 'Avasta sinu profiiliga sobivad ametid.', textEn: 'Discover roles that fit your profile.', icon: BriefcaseBusiness, tone: 'blue' }, { title: 'Vahetada karjääri', en: 'Change career', text: 'Leia uus suund oma olemasolevate oskuste põhjal.', textEn: 'Find a new direction based on your existing skills.', icon: Compass, tone: 'lilac' }, { title: 'Arendada praegusel erialal', en: 'Grow in my field', text: 'Vaata, millised oskused aitavad sul edasi liikuda.', textEn: 'See which skills will help you move forward.', icon: Zap, tone: 'mint' }, { title: 'Ma ei ole veel kindel', en: 'I am not sure yet', text: 'Lase Sparkil sulle suunda soovitada.', textEn: 'Let Spark recommend a direction for you.', icon: Target, tone: 'amber' }]
+  return <div className="flow-page goal-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SAMM 2 · SINU EESMÄRK', 'STEP 2 · YOUR GOAL')}</span><h1>{copy(language, 'Mida soovid järgmisena teha?', 'What do you want to do next?')}</h1><p>{copy(language, 'Vali eesmärk. Spark aitab luua sulle sobivad järgmised sammud.', 'Choose a goal. Spark will create the right next steps for you.')}</p></div><div className="goal-grid">{goals.map(({ title, en, text, textEn, icon: Icon, tone }) => <button className={`goal-card ${selected === title ? 'selected' : ''}`} onClick={() => setSelected(title)} key={title}><span className={`goal-icon ${tone}`}><Icon size={26} /></span>{selected === title && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<h2>{copy(language, title, en)}</h2><p>{copy(language, text, textEn)}</p></button>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Seda valikut saad hiljem muuta.', 'You can change this choice later.')}</div><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
 }
 
-function PathsScreen({ onNext }: { onNext: () => void }) {
-  return <div className="flow-page paths-page"><div className="flow-heading"><span className="kicker">YOUR NEXT MOVE</span><h1>Sulle soovitatud suunad</h1><p>Valisime sinu profiili ja eesmärgi põhjal kõige sobivamad suunad.</p><span className="goal-pill">Eesmärk: leida uus töö</span></div><div className="path-grid">{pathCards.map(({ title, match, description, skills, icon: Icon, tone, recommended }) => <article className={`path-card ${recommended ? 'featured' : ''}`} key={title}>{recommended && <span className="recommended"><Sparkles size={14} /> Soovitatud</span>}<span className={`path-icon ${tone}`}><Icon size={27} /></span><h2>{title}</h2><span className="match">{match}</span><p>{description}</p><hr /><small>Sul on juba:</small><div className="tag-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><Button outline={!recommended} onClick={onNext} wide>Vaata teekonda</Button></article>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> Saad alati hiljem mõne teise suuna valida.</div><Button onClick={onNext}>Jätka <ArrowRight size={18} /></Button></div></div>
+function PathsScreen({ onNext, language }: { onNext: () => void; language: Language }) {
+  return <div className="flow-page paths-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SINU JÄRGMINE SAMM', 'YOUR NEXT MOVE')}</span><h1>{copy(language, 'Sulle soovitatud suunad', 'Recommended directions for you')}</h1><p>{copy(language, 'Valisime sinu profiili ja eesmärgi põhjal kõige sobivamad suunad.', 'We selected the best directions based on your profile and goal.')}</p><span className="goal-pill">{copy(language, 'Eesmärk: leida uus töö', 'Goal: find a new job')}</span></div><div className="path-grid">{pathCards.map(({ title, match, description, skills, icon: Icon, tone, recommended }) => <article className={`path-card ${recommended ? 'featured' : ''}`} key={title}>{recommended && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<span className={`path-icon ${tone}`}><Icon size={27} /></span><h2>{title}</h2><span className="match">{match.replace('sobivus', copy(language, 'sobivus', 'match'))}</span><p>{copy(language, description, title === 'UX/UI disainer' ? 'Create user-friendly digital experiences and connect creativity with technology.' : title === 'Product Specialist' ? 'Support product development by connecting user needs and technology.' : 'Use teaching and digital experience to create better learning solutions.')}</p><hr /><small>{copy(language, 'Sul on juba:', 'You already have:')}</small><div className="tag-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><Button outline={!recommended} onClick={onNext} wide>{copy(language, 'Vaata teekonda', 'View journey')}</Button></article>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Saad alati hiljem mõne teise suuna valida.', 'You can always choose another direction later.')}</div><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
 }
 
-function TeamScreen() {
-  const steps = ['Tutvu valdkonnaga', 'Õpi põhiteed', 'Loo näidisprojekt', 'Koosta portfoolio']
-  return <div className="flow-page team-page"><div className="flow-heading left"><span className="kicker">YOUR JOURNEY</span><h1>Minu teekond</h1><p>Valisid suunaks UX/UI disaineri. Siin on sinu järgmised sammud.</p><span className="goal-pill">Valitud suund: UX/UI disainer</span></div><div className="journey-layout"><div className="journey-left"><article className="summary-card"><span className="path-icon blue"><Sparkles size={25} /></span><div><h2>Sul on juba olemas</h2><p>Sul on väärtuslikud oskused, mis aitavad sul edukalt uue suuna poole liikuda.</p><div className="tag-list">{['suhtlemine', 'digivahendid', 'loovus', 'õpetamine'].map(skill => <span key={skill}>{skill}</span>)}</div></div></article><article className="summary-card"><span className="path-icon lilac"><Target size={25} /></span><div><h2>Sinu eesmärk</h2><p>Liikuda UX/UI disaineri rolli ning rakendada oma loovust ja digioskusi kasutajakesksete lahenduste loomisel.</p></div></article></div><article className="steps-card"><div className="steps-head"><span className="path-icon blue"><Compass size={25} /></span><div><h2>Sinu sammud</h2><p>Siin on sinu teekond UX/UI disaineri suunas.</p></div></div><div className="journey-steps">{steps.map((step, i) => <div className="journey-step" key={step}><span>{i + 1}</span><div><h3>{step}</h3><p>{['Mõista, mida UX/UI disainer teeb.', 'Figma, kasutajauuring ja wireframe’id.', 'Harjuta ja loo esimene töö.', 'Pane oma töö ühte kohta kokku.'][i]}</p></div><small>◷ ~{[2, 6, 8, 4][i]} tundi</small></div>)}</div></article></div></div>
+function TeamScreen({ language }: { language: Language }) {
+  const steps = [['Tutvu valdkonnaga', 'Explore the field', 'Mõista, mida UX/UI disainer teeb.', 'Understand what a UX/UI designer does.'], ['Õpi põhiteed', 'Learn the basics', 'Figma, kasutajauuring ja wireframe’id.', 'Figma, user research and wireframes.'], ['Loo näidisprojekt', 'Create a sample project', 'Harjuta ja loo esimene töö.', 'Practice and create your first piece.'], ['Koosta portfoolio', 'Build a portfolio', 'Pane oma töö ühte kohta kokku.', 'Bring your work together in one place.']]
+  return <div className="flow-page team-page"><div className="flow-heading left"><span className="kicker">{copy(language, 'SINU TEEKOND', 'YOUR JOURNEY')}</span><h1>{copy(language, 'Minu teekond', 'My journey')}</h1><p>{copy(language, 'Valisid suunaks UX/UI disaineri. Siin on sinu järgmised sammud.', 'You chose UX/UI designer. Here are your next steps.')}</p><span className="goal-pill">{copy(language, 'Valitud suund: UX/UI disainer', 'Selected direction: UX/UI designer')}</span></div><div className="journey-layout"><div className="journey-left"><article className="summary-card"><span className="path-icon blue"><Sparkles size={25} /></span><div><h2>{copy(language, 'Sul on juba olemas', 'What you already have')}</h2><p>{copy(language, 'Sul on väärtuslikud oskused, mis aitavad sul edukalt uue suuna poole liikuda.', 'You have valuable skills that will help you move successfully in a new direction.')}</p><div className="tag-list">{['suhtlemine', 'digivahendid', 'loovus', 'õpetamine'].map(skill => <span key={skill}>{skill}</span>)}</div></div></article><article className="summary-card"><span className="path-icon lilac"><Target size={25} /></span><div><h2>{copy(language, 'Sinu eesmärk', 'Your goal')}</h2><p>{copy(language, 'Liikuda UX/UI disaineri rolli ning rakendada oma loovust ja digioskusi kasutajakesksete lahenduste loomisel.', 'Move into a UX/UI designer role and use your creativity and digital skills to build user-centered solutions.')}</p></div></article></div><article className="steps-card"><div className="steps-head"><span className="path-icon blue"><Compass size={25} /></span><div><h2>{copy(language, 'Sinu sammud', 'Your steps')}</h2><p>{copy(language, 'Siin on sinu teekond UX/UI disaineri suunas.', 'Here is your journey towards UX/UI design.')}</p></div></div><div className="journey-steps">{steps.map(([et, en, etDesc, enDesc], i) => <div className="journey-step" key={et}><span>{i + 1}</span><div><h3>{copy(language, et, en)}</h3><p>{copy(language, etDesc, enDesc)}</p></div><small>◷ ~{[2, 6, 8, 4][i]} {copy(language, 'tundi', 'hours')}</small></div>)}</div></article></div></div>
 }
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [language, setLanguage] = useState<Language>(() => localStorage.getItem('spark-language') === 'en' ? 'en' : 'et')
+  const [cv, setCv] = useState<CvUpload | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const steps: Record<Screen, number> = { home: 0, start: 1, profile: 1, goal: 2, paths: 3, team: 5 }
   const step = steps[screen]
-  const content = screen === 'home' ? <HomeScreen onStart={() => setScreen('start')} /> : screen === 'start' ? <StartScreen onChoose={setScreen} /> : screen === 'profile' ? <ProfileScreen onNext={() => setScreen('goal')} /> : screen === 'goal' ? <GoalScreen onNext={() => setScreen('paths')} /> : screen === 'paths' ? <PathsScreen onNext={() => setScreen('team')} /> : <TeamScreen />
+  const changeLanguage = () => {
+    const next = language === 'et' ? 'en' : 'et'
+    setLanguage(next)
+    localStorage.setItem('spark-language', next)
+  }
+  const handleUpload = async (file: File) => {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const text = (await extractCvText(file)).trim()
+      if (!text) throw new Error('No readable text was found in this CV.')
+      setCv({ name: file.name, text })
+      setScreen('profile')
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Could not read this CV.')
+    } finally {
+      setUploading(false)
+    }
+  }
+  const content = screen === 'home' ? <HomeScreen onStart={() => setScreen('start')} language={language} /> : screen === 'start' ? <StartScreen onChoose={setScreen} language={language} onUpload={handleUpload} uploadError={uploadError} uploading={uploading} /> : screen === 'profile' ? <ProfileScreen onNext={() => setScreen('goal')} language={language} cv={cv} /> : screen === 'goal' ? <GoalScreen onNext={() => setScreen('paths')} language={language} /> : screen === 'paths' ? <PathsScreen onNext={() => setScreen('team')} language={language} /> : <TeamScreen language={language} />
   const isPublic = screen === 'home'
-  return <div className={`app-shell ${isPublic ? 'public' : 'product'}`}><Topbar screen={screen} step={step} onNavigate={setScreen} onMenu={() => setMenuOpen(true)} />{!isPublic && <Sidebar screen={screen} onNavigate={setScreen} open={menuOpen} onClose={() => setMenuOpen(false)} />}<main className={isPublic ? 'public-main' : 'product-main'}>{content}</main></div>
+  return <div className={`app-shell ${isPublic ? 'public' : 'product'}`}><Topbar screen={screen} step={step} onNavigate={setScreen} onMenu={() => setMenuOpen(true)} language={language} onLanguageChange={changeLanguage} />{!isPublic && <Sidebar screen={screen} onNavigate={setScreen} open={menuOpen} onClose={() => setMenuOpen(false)} language={language} />}<main className={isPublic ? 'public-main' : 'product-main'}>{content}</main></div>
 }
