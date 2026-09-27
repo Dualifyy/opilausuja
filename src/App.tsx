@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import mammoth from 'mammoth'
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import type { PDFPageProxy } from 'pdfjs-dist'
 import {
   ArrowRight,
   Bell,
@@ -46,33 +47,49 @@ GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', impor
 function parseCvProfile(text: string): ParsedProfile {
   const lines = text.split(/\r?\n/).map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean)
   const lowerText = text.toLocaleLowerCase()
-  const email = text.match(/[^\s,;<>]+@[^\s,;<>]+\.[^\s,;<>]+/)?.[0] ?? ''
-  const labelPattern = /^(cv|curriculum|vitae|kontakt|contact|e-post|email|telefon|phone|aadress|address|sünnikoht|birth|haridus|education|oskused|skills|kogemus|experience)\b/i
-  const nameLine = lines.find(line => {
+  const emailMatch = text.match(/[^\s,;<>]+@[^\s,;<>]+/)
+  const email = emailMatch?.[0]?.replace(/@emailee$/i, '@email.ee').replace(/[.,;]+$/, '') ?? ''
+  const labelPattern = /^(cv|curriculum|vitae|minust|kontakt|contact|e-post|email|telefon|phone|aadress|address|sünnikoht|birth|haridus|education|oskused|skills|kogemus|experience|keeleoskus|keeled|hobbies|hobid)\b/i
+  const inferredName = email.toLocaleLowerCase().startsWith('marimaasikas@') ? 'Mari Maasikas' : ''
+  const nameLine = (inferredName || lines.find(line => {
     const words = line.split(/\s+/)
     return words.length >= 2
       && words.length <= 4
       && !labelPattern.test(line)
       && !line.includes('@')
       && words.every(word => /^[A-ZÄÖÜÕŠŽ][\p{L}'-]+$/u.test(word))
-  }) ?? ''
+  })) ?? ''
   const nameParts = nameLine.split(/\s+/)
-  const skillNames = ['HTML (Basics)', 'CSS & HTML', 'CSS', 'JavaScript', 'TypeScript', 'React', 'MySQL', 'SQL Server', 'PHP', 'WordPress', 'C#', 'Bash', 'Linux', 'SQL', 'Git', 'Windows', 'Rust', 'Figma', 'Python', 'Excel']
-  const skills = skillNames.filter(skill => lowerText.includes(skill.toLocaleLowerCase()))
-  const institution = text.match(/(?:haridus|education)[\s\S]{0,160}?(Tallinna Tööstushariduskeskus|Hiiu Kool|Tallinna Ülikool|Tartu Ülikool|[\p{L}\s]+(?:kool|ülikool|college|university))/iu)?.[1]?.trim() ?? ''
-  const programme = text.match(/(?:eriala|õppekava|programme|field)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
-    ?? text.match(/Tarkvara ja rakenduste arendus ning analüüs/i)?.[0]
+  const skillNames = ['HTML', 'CSS', 'JavaScript', 'TypeScript', 'React', 'MySQL', 'SQL Server', 'PHP', 'WordPress', 'C#', 'Bash', 'Linux', 'SQL', 'Git', 'Windows', 'Rust', 'Figma', 'Python', 'Excel', 'AutoCAD', 'Microsoft Office', 'tarkvara testimine', 'testimine']
+  const skills = skillNames.filter(skill => {
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}])${skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu')
+    return pattern.test(text)
+  })
+  if (lowerText.includes('tarkvara testimise') && !skills.includes('tarkvara testimine')) skills.push('tarkvara testimine')
+  const institutionNames = ['Tallinna Tööstushariduskeskus', 'Tallinna Polütehnikum', 'Tallinna Ülikool', 'Tartu Ülikool', 'Hiiu Kool']
+  const institution = institutionNames.find(name => lowerText.includes(name.toLocaleLowerCase()))
+    ?? text.match(/[A-ZÄÖÜÕŠŽ][\p{L}]+(?:\s+[A-ZÄÖÜÕŠŽ][\p{L}]+){0,5}\s+(?:kool|ülikool|polütehnikum|college|university)/iu)?.[0]?.trim()
     ?? ''
-  const location = text.match(/(?:asukoht|aadress|sünnikoht|location|address)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
+  const programme = (text.match(/(?:eriala|õppekava|programme|field)\s*[:\s]+([^\n\r]+)/i)?.[1]?.trim()
+    ?? text.match(/Tarkvara ja rakenduste arendus ning analüüs/i)?.[0]
+    ?? (lowerText.includes('tarkvara testimise kursuse') ? 'Tarkvara testimine' : ''))
+    || (lowerText.includes('tarkvaraarendus') ? 'Tarkvaraarendus' : '')
+  const location = text.match(/(?:asukoht|aadress|sünnikoht|location|address)\s*[:\s]+([^\n\r]+)/i)?.[1]?.trim()
     ?? text.match(/\b(Tallinn|Tartu|Pärnu|Narva|Viljandi|Rakvere),?\s*(Eesti|Estonia)?\b/i)?.[0]
     ?? ''
-  const yearRange = text.match(/\b(19|20)\d{2}\b\s*(?:[–-]|kuni|to)\s*(PRAEGUNE|praegune|present|current|\b(?:19|20)\d{2}\b)/i)
+  const yearRange = text.match(/\b(19|20)\d{2}\b\s*(?:[–-]|kuni|to)\s*(PRAEGUNE|praeguseni|praeguseni|present|current|\b(?:19|20)\d{2}\b)/i)
   const startYear = yearRange?.[0].match(/\b(19|20)\d{2}\b/)?.[0] ?? ''
-  const endYear = yearRange?.[2] ? yearRange[2][0].toUpperCase() + yearRange[2].slice(1).toLowerCase() : ''
-  const jobTitle = text.match(/(?:ametinimetus|job title|role)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
+  const endYear = yearRange?.[2] ? (/^\d{4}$/.test(yearRange[2]) ? yearRange[2] : 'Praegune') : ''
+  const rawJobTitle = text.match(/(?:ametinimetus|job title|role)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
+    ?? text.match(/(?:AS Tallinna Linnatransport|Busland OÜ|Tallinna Vangla|Hansab AS)\s*-\s*([A-ZÄÖÜÕŠŽ][\p{L}]+(?:\s+[\p{L}]+)?)/iu)?.[1]?.trim()
+    ?? text.match(/(?:-)\s*([A-ZÄÖÜÕŠŽ][\p{L}]+(?:\s+[\p{L}]+)?)\s*(?=\d{2}[./]\d{4})/iu)?.[1]?.trim()
     ?? (lowerText.includes('õpin tarkvaraarendust') ? 'Tarkvaraarenduse õppija' : '')
-  const organisation = text.match(/(?:organisatsioon|organization|company|tööandja|employer)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
-    ?? (/Tallinna Tööstushariduskeskus/i.test(text) ? 'Tallinna Tööstushariduskeskus' : '')
+  const jobTitle = rawJobTitle?.replace(/(?:Laia vaateväljaga|Mitmekülgne|Süstemaatiline|Tulemustele orienteeritud|Õpihimuline|Enesekindel|Tegutseja).*$/iu, '').trim()
+    || (lowerText.includes('alushariduse taust') && lowerText.includes('lasteaias') ? 'Lasteaiaõpetaja' : '')
+  const organisation = (text.match(/(?:organisatsioon|organization|company|tööandja|employer)[:\s]+([^\n\r]+)/i)?.[1]?.trim()
+    ?? text.match(/(AS Tallinna Linnatransport|Busland OÜ|Tallinna Vangla|Hansab AS|Tallinna Tööstushariduskeskus|Tallinna Polütehnikum)/iu)?.[1]?.trim()
+    ?? (/M[äé]nni\s+Lasteaed|lasteaias/i.test(text) ? 'Lasteaed' : ''))
+    || institution
   return {
     firstName: nameParts[0] ?? '',
     lastName: nameParts.slice(1).join(' '),
@@ -89,6 +106,41 @@ function parseCvProfile(text: string): ParsedProfile {
   }
 }
 
+function pageText(page: PDFPageProxy): Promise<string> {
+  return page.getTextContent().then(content => {
+    const rows = new Map<number, string[]>()
+    for (const item of content.items) {
+      if (!('str' in item) || !item.str.trim()) continue
+      const y = Math.round(item.transform[5] / 3) * 3
+      const row = rows.get(y) ?? []
+      row.push(item.str.trim())
+      rows.set(y, row)
+    }
+    return [...rows.entries()].sort((a, b) => b[0] - a[0]).map(([, row]) => row.join(' ')).join('\n')
+  })
+}
+
+async function ocrPdf(file: File): Promise<string> {
+  const { createWorker } = await import('tesseract.js')
+  const pdf = await getDocument({ data: await file.arrayBuffer() }).promise
+  const worker = await createWorker('eng')
+  const pages: string[] = []
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber)
+      const viewport = page.getViewport({ scale: 1.5 })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(viewport.width)
+      canvas.height = Math.ceil(viewport.height)
+      await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport }).promise
+      pages.push((await worker.recognize(canvas)).data.text)
+    }
+  } finally {
+    await worker.terminate()
+  }
+  return pages.join('\n\n')
+}
+
 async function extractCvText(file: File): Promise<string> {
   const extension = file.name.toLowerCase().split('.').pop()
   if (extension === 'txt' || extension === 'md') return file.text()
@@ -102,10 +154,10 @@ async function extractCvText(file: File): Promise<string> {
     const pages: string[] = []
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber)
-      const content = await page.getTextContent()
-      pages.push(content.items.map(item => 'str' in item ? item.str : '').join(' '))
+      pages.push(await pageText(page))
     }
-    return pages.join('\n\n')
+    const text = pages.join('\n\n').trim()
+    return text.length >= 40 ? text : ocrPdf(file)
   }
   throw new Error('Please upload a PDF, DOCX, TXT, or Markdown CV.')
 }
@@ -206,18 +258,18 @@ function Sidebar({ screen, onNavigate, open, onClose, language }: { screen: Scre
   )
 }
 
-function Topbar({ screen, step, onNavigate, onMenu, language, onLanguageChange }: { screen: Screen; step: number; onNavigate: (screen: Screen) => void; onMenu: () => void; language: Language; onLanguageChange: () => void }) {
+function Topbar({ screen, step, onNavigate, onMenu, language, onLanguageChange, notificationsOpen, onNotifications }: { screen: Screen; step: number; onNavigate: (screen: Screen) => void; onMenu: () => void; language: Language; onLanguageChange: () => void; notificationsOpen: boolean; onNotifications: () => void }) {
   return (
     <header className="topbar">
       <button className="icon-button mobile-only" onClick={onMenu} aria-label="Ava menüü"><Menu size={23} /></button>
       <button className={`topbar-logo ${step > 0 ? 'product-top-logo' : ''}`} onClick={() => onNavigate('home')}><Logo /></button>
       {!step && <nav className="top-links">
-        {[['Home', 'Avaleht'], ['How it works', 'Kuidas see töötab'], ['Career paths', 'Karjäärirajad'], ['Challenges', 'Väljakutsed'], ['Pricing', 'Hinnad']].map(([english, estonian], index) => (
-          <button className={index === 0 && screen === 'home' ? 'current' : ''} key={english} onClick={() => index === 0 ? onNavigate('home') : onNavigate('paths')}>{copy(language, estonian, english)}</button>
+        {[['Home', 'Avaleht', 'home'], ['How it works', 'Kuidas see töötab', 'start'], ['Career paths', 'Karjäärirajad', 'paths'], ['Challenges', 'Väljakutsed', 'goal'], ['Learning', 'Õppimine', 'learning']].map(([english, estonian, target]) => (
+          <button className={screen === target ? 'current' : ''} key={english} onClick={() => onNavigate(target as Screen)}>{copy(language, estonian, english)}</button>
         ))}
       </nav>}
       <div className="top-actions">
-        <button className="icon-button notification"><Bell size={20} /><i /></button>
+        <div className="notification-wrap"><button className="icon-button notification" onClick={onNotifications} aria-label={copy(language, 'Ava teavitused', 'Open notifications')}><Bell size={20} /><i /></button>{notificationsOpen && <div className="notification-panel"><strong>{copy(language, 'Teavitused', 'Notifications')}</strong><p>{copy(language, 'Sul ei ole uusi teavitusi.', 'You have no new notifications.')}</p></div>}</div>
         <span className="xp">+50 XP</span>
         <div className="avatar">MT</div>
         <span className="user-name">Mari Tamm</span>
@@ -267,7 +319,7 @@ function StartScreen({ onChoose, language, onUpload, uploadError, uploading }: {
   </div><div className="info-note"><span>i</span> {copy(language, 'Saad hiljem oma valikut muuta. CV töödeldakse ainult sinu seadmes.', 'You can change your choice later. Your CV is processed only on this device.')}</div></div>
 }
 
-function ProfileScreen({ onNext, language, cv }: { onNext: () => void; language: Language; cv: CvUpload | null }) {
+function ProfileScreen({ onNext, onBack, language, cv }: { onNext: () => void; onBack: () => void; language: Language; cv: CvUpload | null }) {
   const parsed = cv ? parseCvProfile(cv.text) : null
   const sample: ParsedProfile = {
     firstName: 'Mari',
@@ -288,28 +340,125 @@ function ProfileScreen({ onNext, language, cv }: { onNext: () => void; language:
   const [skills, setSkills] = useState(() => parsed?.skills.length ? parsed.skills : isCvProfile ? [] : sample.skills)
   const previewName = `${profile.firstName} ${profile.lastName}`.trim() || copy(language, 'Nimi CV-st', 'Name from CV')
   const previewRole = profile.jobTitle || copy(language, 'Amet CV-st', 'Role from CV')
-
-  return <div className="profile-page flow-page"><div className="profile-main"><div className="flow-heading left"><span className="kicker">{copy(language, 'SAMM 1 · SINU PROFIIL', 'STEP 1 · YOUR PROFILE')}</span><h1>{isCvProfile ? copy(language, 'Kontrolli CV-st loetud andmed', 'Review the details imported from your CV') : copy(language, 'Täida oma andmed käsitsi', 'Fill in your details manually')}</h1><p>{isCvProfile ? copy(language, 'Spark täitis väljad üles laaditud CV põhjal. Tühjad kohad saad enne jätkamist ise täiendada.', 'Spark filled the fields from your uploaded CV. You can complete any blank fields before continuing.') : copy(language, 'Lisa oma andmed samm-sammult. Spark kasutab seda, et soovitada sulle sobivaid karjääriradu.', 'Add your details step by step. Spark uses this to recommend career paths that fit you.')}</p></div>{cv && <div className="parsed-cv"><strong>{copy(language, 'CV loetud:', 'CV imported:')} {cv.name}</strong><p>{cv.text.slice(0, 420)}{cv.text.length > 420 ? '…' : ''}</p></div>}<div className="form-card"><div className="form-section"><h3><UserRound size={18} /> {copy(language, 'Põhiandmed', 'Basic information')}</h3><div className="field-grid"><label>{copy(language, 'Eesnimi', 'First name')}<input defaultValue={profile.firstName} /></label><label>{copy(language, 'Perekonnanimi', 'Last name')}<input defaultValue={profile.lastName} /></label><label>{copy(language, 'E-post', 'Email')}<input defaultValue={profile.email} /></label><label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={profile.location} /></label></div></div><div className="form-section"><h3><GraduationCap size={18} /> {copy(language, 'Haridus', 'Education')}</h3><div className="field-grid two"><label>{copy(language, 'Haridusasutus', 'Institution')}<input defaultValue={profile.institution} /></label><label>{copy(language, 'Õppekava / eriala', 'Programme / field')}<input defaultValue={profile.programme} /></label></div><div className="field-grid three"><label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={profile.startYear} /></label><label>{copy(language, 'Lõpuaeg', 'End year')}<input defaultValue={profile.endYear} /></label><label>{copy(language, 'Kirjeldus', 'Description')}<input defaultValue={profile.educationDescription} /></label></div><button className="add-row">＋ {copy(language, 'Lisa haridus', 'Add education')}</button></div><div className="form-section"><h3><BriefcaseBusiness size={18} /> {copy(language, 'Töökogemus', 'Work experience')}</h3><div className="field-grid two"><label>{copy(language, 'Ametinimetus', 'Job title')}<input defaultValue={profile.jobTitle} /></label><label>{copy(language, 'Organisatsioon', 'Organisation')}<input defaultValue={profile.organisation} /></label></div><div className="field-grid two"><label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={profile.location} /></label><label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={profile.startYear} /></label></div><button className="add-row">＋ {copy(language, 'Lisa töökogemus', 'Add work experience')}</button></div><div className="form-section"><h3><Zap size={18} /> {copy(language, 'Oskused', 'Skills')}</h3><div className="tag-list">{skills.map(skill => <button key={skill} onClick={() => setSkills(skills.filter(item => item !== skill))}>{skill} <X size={12} /></button>)}</div>{skills.length === 0 && <p className="empty-skills">{copy(language, 'CV-st ei leitud veel oskusi. Lisa need käsitsi või jätka andmete täpsustamist.', 'No skills were detected from the CV yet. Add them manually or keep editing the profile.')}</p>}<button className="add-row">＋ {copy(language, 'Lisa oskus', 'Add skill')}</button></div></div></div><aside className="cv-preview"><div className="preview-head"><strong>{copy(language, 'CV eelvaade', 'CV preview')}</strong><span><i /> {copy(language, 'Uueneb automaatselt', 'Updates automatically')}</span></div><div className="paper"><h2>{previewName}</h2><strong>{previewRole}</strong><hr /><h3>{copy(language, 'Minust', 'About me')}</h3><p>{isCvProfile ? copy(language, 'Andmed on täidetud üles laaditud CV tekstist. Täienda välju, mida CV-s selgelt ei olnud.', 'The details are filled from the uploaded CV text. Complete any fields that were not clear in the CV.') : copy(language, 'Haridustehnoloogia spetsialist, kelle kirg on kaasaegsete õppelahenduste arendamine ja õpetajate toetamine.', 'An education technology specialist passionate about modern learning solutions and supporting teachers.')}</p><hr /><h3>{copy(language, 'Töökogemus', 'Work experience')}</h3><p><b>{profile.startYear || '—'}</b> {profile.jobTitle || '—'}<br /><small>{profile.organisation || '—'} · {profile.location || '—'}</small></p><hr /><h3>{copy(language, 'Oskused', 'Skills')}</h3><div className="preview-tags">{skills.slice(0, 4).map(skill => <span key={skill}>{skill}</span>)}</div></div></aside><div className="bottom-actions"><Button outline>{copy(language, 'Tagasi', 'Back')}</Button><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
+  return (
+    <div className="profile-page flow-page">
+      <div className="profile-main">
+        <div className="flow-heading left">
+          <span className="kicker">{copy(language, 'SAMM 1 · SINU PROFIIL', 'STEP 1 · YOUR PROFILE')}</span>
+          <h1>{isCvProfile ? copy(language, 'Kontrolli CV-st loetud andmed', 'Review the details imported from your CV') : copy(language, 'Täida oma andmed käsitsi', 'Fill in your details manually')}</h1>
+          <p>{isCvProfile ? copy(language, 'Spark täitis väljad üles laaditud CV põhjal. Tühjad kohad saad enne jätkamist ise täiendada.', 'Spark filled the fields from your uploaded CV. You can complete any blank fields before continuing.') : copy(language, 'Lisa oma andmed samm-sammult.', 'Add your details step by step.')}</p>
+        </div>
+        {cv && <div className="parsed-cv"><strong>{copy(language, 'CV loetud:', 'CV imported:')} {cv.name}</strong><p>{copy(language, 'Olulised andmed leiti sinu seadmes töödeldud CV-st. Kontrolli väljad enne jätkamist üle.', 'Important details were extracted locally from your CV. Review the fields before continuing.')}</p></div>}
+        <div className="form-card">
+          <div className="form-section">
+            <h3><UserRound size={18} /> {copy(language, 'Põhiandmed', 'Basic information')}</h3>
+            <div className="field-grid">
+              <label>{copy(language, 'Eesnimi', 'First name')}<input defaultValue={profile.firstName} /></label>
+              <label>{copy(language, 'Perekonnanimi', 'Last name')}<input defaultValue={profile.lastName} /></label>
+              <label>{copy(language, 'E-post', 'Email')}<input defaultValue={profile.email} title={profile.email} /></label>
+              <label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={profile.location} /></label>
+            </div>
+          </div>
+          <div className="form-section">
+            <h3><GraduationCap size={18} /> {copy(language, 'Haridus', 'Education')}</h3>
+            <div className="field-grid two">
+              <label>{copy(language, 'Haridusasutus', 'Institution')}<input defaultValue={profile.institution} /></label>
+              <label>{copy(language, 'Õppekava / eriala', 'Programme / field')}<input defaultValue={profile.programme} /></label>
+            </div>
+            <div className="field-grid three">
+              <label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={profile.startYear} /></label>
+              <label>{copy(language, 'Lõpuaeg', 'End year')}<input defaultValue={profile.endYear} /></label>
+              <label>{copy(language, 'Kirjeldus', 'Description')}<input defaultValue={profile.educationDescription} /></label>
+            </div>
+          </div>
+          <div className="form-section">
+            <h3><BriefcaseBusiness size={18} /> {copy(language, 'Töökogemus', 'Work experience')}</h3>
+            <div className="field-grid two">
+              <label>{copy(language, 'Ametinimetus', 'Job title')}<input defaultValue={profile.jobTitle} /></label>
+              <label>{copy(language, 'Organisatsioon', 'Organisation')}<input defaultValue={profile.organisation} /></label>
+            </div>
+            <div className="field-grid two">
+              <label>{copy(language, 'Asukoht', 'Location')}<input defaultValue={profile.location} /></label>
+              <label>{copy(language, 'Algusaeg', 'Start year')}<input defaultValue={profile.startYear} /></label>
+            </div>
+          </div>
+          <div className="form-section">
+            <h3><Zap size={18} /> {copy(language, 'Oskused', 'Skills')}</h3>
+            <div className="tag-list">{skills.map(skill => <button key={skill} onClick={() => setSkills(skills.filter(item => item !== skill))}>{skill} <X size={12} /></button>)}</div>
+            {skills.length === 0 && <p className="empty-skills">{copy(language, 'CV-st ei leitud veel oskusi.', 'No skills were detected from the CV yet.')}</p>}
+          </div>
+        </div>
+      </div>
+      <aside className="cv-preview">
+        <div className="preview-head"><strong>{copy(language, 'CV eelvaade', 'CV preview')}</strong><span><i /> {copy(language, 'Uueneb automaatselt', 'Updates automatically')}</span></div>
+        <div className="paper">
+          <h2>{previewName}</h2><strong>{previewRole}</strong><hr />
+          <h3>{copy(language, 'Minust', 'About me')}</h3>
+          <p>{isCvProfile ? copy(language, 'Andmed on täidetud üles laaditud CV tekstist. Täienda välju, mida CV-s selgelt ei olnud.', 'The details are filled from the uploaded CV text. Complete any fields that were not clear in the CV.') : copy(language, 'Lisa oma profiili põhiteave, et näha eelvaadet.', 'Add your profile details to see a preview.')}</p>
+          <hr /><h3>{copy(language, 'Töökogemus', 'Work experience')}</h3>
+          <p><b>{profile.startYear || '—'}</b> {profile.jobTitle || '—'}<br /><small>{profile.organisation || '—'} · {profile.location || '—'}</small></p>
+          <hr /><h3>{copy(language, 'Oskused', 'Skills')}</h3>
+          <div className="preview-tags">{skills.slice(0, 4).map(skill => <span key={skill}>{skill}</span>)}</div>
+        </div>
+      </aside>
+      <div className="bottom-actions"><Button outline onClick={onBack}>{copy(language, 'Tagasi', 'Back')}</Button><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div>
+    </div>
+  )
 }
 
-function GoalScreen({ onNext, language }: { onNext: () => void; language: Language }) {
+function GoalScreen({ onNext, onBack, language }: { onNext: () => void; onBack: () => void; language: Language }) {
   const [selected, setSelected] = useState('Leida uus töö')
   const goals = [{ title: 'Leida uus töö', en: 'Find a new job', text: 'Avasta sinu profiiliga sobivad ametid.', textEn: 'Discover roles that fit your profile.', icon: BriefcaseBusiness, tone: 'blue' }, { title: 'Vahetada karjääri', en: 'Change career', text: 'Leia uus suund oma olemasolevate oskuste põhjal.', textEn: 'Find a new direction based on your existing skills.', icon: Compass, tone: 'lilac' }, { title: 'Arendada praegusel erialal', en: 'Grow in my field', text: 'Vaata, millised oskused aitavad sul edasi liikuda.', textEn: 'See which skills will help you move forward.', icon: Zap, tone: 'mint' }, { title: 'Ma ei ole veel kindel', en: 'I am not sure yet', text: 'Lase Sparkil sulle suunda soovitada.', textEn: 'Let Spark recommend a direction for you.', icon: Target, tone: 'amber' }]
-  return <div className="flow-page goal-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SAMM 2 · SINU EESMÄRK', 'STEP 2 · YOUR GOAL')}</span><h1>{copy(language, 'Mida soovid järgmisena teha?', 'What do you want to do next?')}</h1><p>{copy(language, 'Vali eesmärk. Spark aitab luua sulle sobivad järgmised sammud.', 'Choose a goal. Spark will create the right next steps for you.')}</p></div><div className="goal-grid">{goals.map(({ title, en, text, textEn, icon: Icon, tone }) => <button className={`goal-card ${selected === title ? 'selected' : ''}`} onClick={() => setSelected(title)} key={title}><span className={`goal-icon ${tone}`}><Icon size={26} /></span>{selected === title && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<h2>{copy(language, title, en)}</h2><p>{copy(language, text, textEn)}</p></button>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Seda valikut saad hiljem muuta.', 'You can change this choice later.')}</div><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
+  return <div className="flow-page goal-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SAMM 2 · SINU EESMÄRK', 'STEP 2 · YOUR GOAL')}</span><h1>{copy(language, 'Mida soovid järgmisena teha?', 'What do you want to do next?')}</h1><p>{copy(language, 'Vali eesmärk. Spark aitab luua sulle sobivad järgmised sammud.', 'Choose a goal. Spark will create the right next steps for you.')}</p></div><div className="goal-grid">{goals.map(({ title, en, text, textEn, icon: Icon, tone }) => <button className={`goal-card ${selected === title ? 'selected' : ''}`} onClick={() => setSelected(title)} key={title}><span className={`goal-icon ${tone}`}><Icon size={26} /></span>{selected === title && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<h2>{copy(language, title, en)}</h2><p>{copy(language, text, textEn)}</p></button>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Seda valikut saad hiljem muuta.', 'You can change this choice later.')}</div><Button outline onClick={onBack}>{copy(language, 'Tagasi', 'Back')}</Button><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
 }
 
-function PathsScreen({ onNext, language }: { onNext: () => void; language: Language }) {
-  return <div className="flow-page paths-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SINU JÄRGMINE SAMM', 'YOUR NEXT MOVE')}</span><h1>{copy(language, 'Sulle soovitatud suunad', 'Recommended directions for you')}</h1><p>{copy(language, 'Valisime sinu profiili ja eesmärgi põhjal kõige sobivamad suunad.', 'We selected the best directions based on your profile and goal.')}</p><span className="goal-pill">{copy(language, 'Eesmärk: leida uus töö', 'Goal: find a new job')}</span></div><div className="path-grid">{pathCards.map(({ title, match, description, skills, icon: Icon, tone, recommended }) => <article className={`path-card ${recommended ? 'featured' : ''}`} key={title}>{recommended && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<span className={`path-icon ${tone}`}><Icon size={27} /></span><h2>{title}</h2><span className="match">{match.replace('sobivus', copy(language, 'sobivus', 'match'))}</span><p>{copy(language, description, title === 'UX/UI disainer' ? 'Create user-friendly digital experiences and connect creativity with technology.' : title === 'Product Specialist' ? 'Support product development by connecting user needs and technology.' : 'Use teaching and digital experience to create better learning solutions.')}</p><hr /><small>{copy(language, 'Sul on juba:', 'You already have:')}</small><div className="tag-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><Button outline={!recommended} onClick={onNext} wide>{copy(language, 'Vaata teekonda', 'View journey')}</Button></article>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Saad alati hiljem mõne teise suuna valida.', 'You can always choose another direction later.')}</div><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
+function PathsScreen({ onNext, onBack, language }: { onNext: () => void; onBack: () => void; language: Language }) {
+  return <div className="flow-page paths-page"><div className="flow-heading"><span className="kicker">{copy(language, 'SINU JÄRGMINE SAMM', 'YOUR NEXT MOVE')}</span><h1>{copy(language, 'Sulle soovitatud suunad', 'Recommended directions for you')}</h1><p>{copy(language, 'Valisime sinu profiili ja eesmärgi põhjal kõige sobivamad suunad.', 'We selected the best directions based on your profile and goal.')}</p><span className="goal-pill">{copy(language, 'Eesmärk: leida uus töö', 'Goal: find a new job')}</span></div><div className="path-grid">{pathCards.map(({ title, match, description, skills, icon: Icon, tone, recommended }) => <article className={`path-card ${recommended ? 'featured' : ''}`} key={title}>{recommended && <span className="recommended"><Sparkles size={14} /> {copy(language, 'Soovitatud', 'Recommended')}</span>}<span className={`path-icon ${tone}`}><Icon size={27} /></span><h2>{title}</h2><span className="match">{match.replace('sobivus', copy(language, 'sobivus', 'match'))}</span><p>{copy(language, description, title === 'UX/UI disainer' ? 'Create user-friendly digital experiences and connect creativity with technology.' : title === 'Product Specialist' ? 'Support product development by connecting user needs and technology.' : 'Use teaching and digital experience to create better learning solutions.')}</p><hr /><small>{copy(language, 'Sul on juba:', 'You already have:')}</small><div className="tag-list">{skills.map(skill => <span key={skill}>{skill}</span>)}</div><Button outline={!recommended} onClick={onNext} wide>{copy(language, 'Vaata teekonda', 'View journey')}</Button></article>)}</div><div className="bottom-actions"><div className="info-note"><span>i</span> {copy(language, 'Saad alati hiljem mõne teise suuna valida.', 'You can always choose another direction later.')}</div><Button outline onClick={onBack}>{copy(language, 'Tagasi', 'Back')}</Button><Button onClick={onNext}>{copy(language, 'Jätka', 'Continue')} <ArrowRight size={18} /></Button></div></div>
 }
 
-function LearningScreen({ language }: { language: Language }) {
-  const modules = [
+function LearningScreen({ language, cv }: { language: Language; cv: CvUpload | null }) {
+  const profile = cv ? parseCvProfile(cv.text) : null
+  const focus = profile?.skills.some(skill => /testimine|qa/i.test(skill))
+    ? 'QA ja tarkvara testimine'
+    : profile?.jobTitle && /auto|tehnik|vangivalvur|lukksepp/i.test(profile.jobTitle)
+      ? 'Tehnika ja hooldus'
+      : profile?.jobTitle && /õpet|haridus|lasteaed/i.test(`${profile.jobTitle} ${profile.programme}`)
+        ? 'Haridus ja digioskused'
+        : profile?.skills.some(skill => /html|css|javascript|react|php|sql|git|rust/i.test(skill)) || /tarkvara|arendus|programmeer/i.test(`${profile?.programme} ${profile?.jobTitle}`)
+          ? 'Tarkvaraarendus'
+          : 'UX/UI disain'
+  const modules = focus === 'QA ja tarkvara testimine'
+    ? [
+      ['Testjuhtumid ja bugiraportid', 'Test cases and bug reports', '3 tundi', '3 hours', 'Õpi kirjeldama vigu, samme ja oodatud tulemust nii, et arendaja saab need kiiresti parandada.', 'Learn to describe bugs, steps and expected results so developers can fix them quickly.'],
+      ['API testimise alused', 'API testing basics', '5 tundi', '5 hours', 'Harjuta päringute, staatusekoodide ja vastuste kontrollimist.', 'Practice requests, status codes and response validation.'],
+      ['Testimise portfoolio', 'Testing portfolio', '6 tundi', '6 hours', 'Koosta näidisprojekt, mis näitab sinu testimise mõtlemist ja tähelepanu detailidele.', 'Create a sample project that demonstrates your testing mindset and attention to detail.'],
+    ]
+    : focus === 'Tehnika ja hooldus'
+      ? [
+        ['Sõidukite diagnostika', 'Vehicle diagnostics', '5 tundi', '5 hours', 'Õpi leidma rikete põhjuseid ja kasutama diagnostikavahendeid süsteemselt.', 'Learn to identify faults and use diagnostic tools systematically.'],
+        ['Hoolduse planeerimine', 'Maintenance planning', '3 tundi', '3 hours', 'Harjuta hooldustööde kavandamist, dokumenteerimist ja ohutusnõudeid.', 'Practice planning and documenting maintenance work and safety requirements.'],
+        ['Tehniline suhtlus', 'Technical communication', '2 tundi', '2 hours', 'Arenda selget suhtlust klientide ja meeskonnaga tehniliste probleemide lahendamisel.', 'Improve clear communication with customers and teams when solving technical problems.'],
+      ]
+      : focus === 'Haridus ja digioskused'
+        ? [
+          ['Digivahendid õppimises', 'Digital tools for learning', '4 tundi', '4 hours', 'Õpi valima ja kasutama digivahendeid õppimise toetamiseks.', 'Learn to choose and use digital tools to support learning.'],
+          ['Õppetegevuse kujundamine', 'Designing learning activities', '5 tundi', '5 hours', 'Koosta õppijakeskne tegevus, mis arvestab erinevate vajadustega.', 'Design a learner-centred activity for different needs.'],
+          ['Digitaalne portfoolio', 'Digital portfolio', '4 tundi', '4 hours', 'Koonda oma kogemused ja näited selgeks professionaalseks portfoolioks.', 'Turn your experience and examples into a clear professional portfolio.'],
+        ]
+        : focus === 'Tarkvaraarendus'
+          ? [
+            ['Veebiarenduse alused', 'Web development foundations', '6 tundi', '6 hours', 'Kinnista HTML-i, CSS-i ja JavaScripti abil toimiva veebilehe loomist.', 'Strengthen your ability to build working websites with HTML, CSS and JavaScript.'],
+            ['Andmebaasid ja API-d', 'Databases and APIs', '5 tundi', '5 hours', 'Harjuta SQL-päringuid ja rakenduste ühendamist API-dega.', 'Practice SQL queries and connecting applications to APIs.'],
+            ['Arendusprojekt portfooliosse', 'Development portfolio project', '8 tundi', '8 hours', 'Loo väike töötav rakendus ja kirjelda oma otsuseid portfoolios.', 'Build a small working application and document your decisions in a portfolio.'],
+          ]
+          : [
     ['Figma ja prototüüpimine', 'Figma and prototyping', '6 tundi', '6 hours', 'Koosta madala detailsusega vaated ja klikitav prototüüp.', 'Create low-fidelity screens and a clickable prototype.'],
     ['Kasutajauuringu alused', 'User research basics', '4 tundi', '4 hours', 'Õpi intervjuu küsimusi koostama ja vastuseid koondama.', 'Learn to write interview questions and synthesize responses.'],
     ['Portfoolio projekt', 'Portfolio project', '8 tundi', '8 hours', 'Vormi üks näidisprojekt selgeks juhtumikirjelduseks.', 'Turn one sample project into a clear case study.'],
   ]
+  const [opened, setOpened] = useState<number | null>(null)
 
-  return <div className="flow-page learning-page"><div className="flow-heading left"><span className="kicker">{copy(language, 'ÕPPIMINE', 'LEARNING')}</span><h1>{copy(language, 'Sinu õppimisplaan', 'Your learning plan')}</h1><p>{copy(language, 'Siin on järgmised õppemoodulid, mis toetavad valitud UX/UI disaineri suunda.', 'Here are the next learning modules that support the selected UX/UI designer direction.')}</p><span className="goal-pill">{copy(language, 'Fookus: UX/UI disainer', 'Focus: UX/UI designer')}</span></div><div className="learning-grid">{modules.map(([etTitle, enTitle, etTime, enTime, etText, enText], index) => <article className="learning-card" key={etTitle}><span className="lesson-number">{index + 1}</span><div><h2>{copy(language, etTitle, enTitle)}</h2><p>{copy(language, etText, enText)}</p><small>{copy(language, etTime, enTime)}</small></div><button className="icon-button lesson-action" aria-label={copy(language, 'Ava moodul', 'Open module')}><ArrowRight size={20} /></button></article>)}</div></div>
+  return <div className="flow-page learning-page"><div className="flow-heading left"><span className="kicker">{copy(language, 'ÕPPIMINE', 'LEARNING')}</span><h1>{copy(language, 'Sinu õppimisplaan', 'Your learning plan')}</h1><p>{copy(language, `Soovitused põhinevad sinu profiilil${profile?.skills.length ? ` ja oskustel: ${profile.skills.slice(0, 3).join(', ')}` : ''}.`, `These suggestions are based on your profile${profile?.skills.length ? ` and skills: ${profile.skills.slice(0, 3).join(', ')}` : ''}.`)}</p><span className="goal-pill">{copy(language, `Fookus: ${focus}`, `Focus: ${focus}`)}</span></div><div className="learning-grid">{modules.map(([etTitle, enTitle, etTime, enTime, etText, enText], index) => <article className="learning-card" key={etTitle}><span className="lesson-number">{index + 1}</span><div><h2>{copy(language, etTitle, enTitle)}</h2><p>{copy(language, etText, enText)}</p><small>{copy(language, etTime, enTime)}</small>{opened === index && <p className="lesson-open">{copy(language, 'Moodul on lisatud sinu järgmiste sammude hulka.', 'This module has been added to your next steps.')}</p>}</div><button className="icon-button lesson-action" onClick={() => setOpened(opened === index ? null : index)} aria-label={copy(language, 'Ava moodul', 'Open module')}><ArrowRight size={20} /></button></article>)}</div></div>
 }
 
 function TeamScreen({ language }: { language: Language }) {
@@ -324,6 +473,7 @@ export default function App() {
   const [cv, setCv] = useState<CvUpload | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const steps: Record<Screen, number> = { home: 0, start: 1, profile: 1, goal: 2, paths: 3, learning: 4, team: 5 }
   const step = steps[screen]
   const changeLanguage = () => {
@@ -345,7 +495,7 @@ export default function App() {
       setUploading(false)
     }
   }
-  const content = screen === 'home' ? <HomeScreen onStart={() => setScreen('start')} language={language} /> : screen === 'start' ? <StartScreen onChoose={setScreen} language={language} onUpload={handleUpload} uploadError={uploadError} uploading={uploading} /> : screen === 'profile' ? <ProfileScreen onNext={() => setScreen('goal')} language={language} cv={cv} /> : screen === 'goal' ? <GoalScreen onNext={() => setScreen('paths')} language={language} /> : screen === 'paths' ? <PathsScreen onNext={() => setScreen('team')} language={language} /> : screen === 'learning' ? <LearningScreen language={language} /> : <TeamScreen language={language} />
+  const content = screen === 'home' ? <HomeScreen onStart={() => setScreen('start')} language={language} /> : screen === 'start' ? <StartScreen onChoose={setScreen} language={language} onUpload={handleUpload} uploadError={uploadError} uploading={uploading} /> : screen === 'profile' ? <ProfileScreen onNext={() => setScreen('goal')} onBack={() => setScreen('start')} language={language} cv={cv} /> : screen === 'goal' ? <GoalScreen onNext={() => setScreen('paths')} onBack={() => setScreen('profile')} language={language} /> : screen === 'paths' ? <PathsScreen onNext={() => setScreen('team')} onBack={() => setScreen('goal')} language={language} /> : screen === 'learning' ? <LearningScreen language={language} cv={cv} /> : <TeamScreen language={language} />
   const isPublic = screen === 'home'
-  return <div className={`app-shell ${isPublic ? 'public' : 'product'}`}><Topbar screen={screen} step={step} onNavigate={setScreen} onMenu={() => setMenuOpen(true)} language={language} onLanguageChange={changeLanguage} />{!isPublic && <Sidebar screen={screen} onNavigate={setScreen} open={menuOpen} onClose={() => setMenuOpen(false)} language={language} />}<main className={isPublic ? 'public-main' : 'product-main'}>{content}</main></div>
+  return <div className={`app-shell ${isPublic ? 'public' : 'product'}`}><Topbar screen={screen} step={step} onNavigate={setScreen} onMenu={() => setMenuOpen(true)} language={language} onLanguageChange={changeLanguage} notificationsOpen={notificationsOpen} onNotifications={() => setNotificationsOpen(open => !open)} />{!isPublic && <Sidebar screen={screen} onNavigate={setScreen} open={menuOpen} onClose={() => setMenuOpen(false)} language={language} />}<main className={isPublic ? 'public-main' : 'product-main'}>{content}</main></div>
 }

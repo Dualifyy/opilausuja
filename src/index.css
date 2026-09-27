@@ -15,7 +15,7 @@ button { border: 0; cursor: pointer; }
 .top-links { display: flex; gap: 38px; margin-left: 9%; height: 100%; align-items: center; }
 .top-links button { color: #667697; background: none; font-weight: 500; height: 100%; position: relative; }
 .top-links button.current { color: #111d47; font-weight: 700; }.top-links button.current:after { content: ''; position: absolute; bottom: 19px; left: 0; right: 0; height: 2px; background: #0878ee; }
-.top-actions { margin-left: auto; display: flex; gap: 14px; align-items: center; color: #182558; font-size: 13px; }
+.top-actions { margin-left: auto; display: flex; gap: 14px; align-items: center; color: #182558; font-size: 13px; }.notification-wrap { position: relative; }.notification-panel { position: absolute; right: 0; top: 38px; width: 220px; padding: 14px; border: 1px solid #dfe8f3; border-radius: 10px; background: white; box-shadow: 0 10px 24px #174e8518; z-index: 6; }.notification-panel strong { font-size: 13px; }.notification-panel p { margin: 7px 0 0; color: #7181a1; font-size: 12px; line-height: 1.4; }
 .language-switch { padding: 6px 9px; border: 1px solid #b9d5f5; border-radius: 7px; background: #f1f7ff; color: #0878ee; font-size: 11px; font-weight: 700; }
 .icon-button { background: none; color: inherit; padding: 5px; }.notification { position: relative; }.notification i { width: 6px; height: 6px; border-radius: 50%; background: #ffb41c; position: absolute; right: 5px; top: 4px; }
 .xp { padding: 8px 13px; color: #d48b00; background: #fff5d9; border-radius: 99px; font-size: 12px; font-weight: 700; }.avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(140deg,#efc3ae,#9e4a40); color: white; font-weight: 700; font-size: 11px; }
